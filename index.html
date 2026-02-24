@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProPath — Football Career Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="pitch-bg"></div>
+
+<div id="app">
+
+  <!-- ══════════════════════════════════════
+       SCREEN 0 — SPLASH
+  ══════════════════════════════════════ -->
+  <div class="screen active" id="screen-0">
+    <div class="logo">
+      <div class="logo-wordmark">ProPath</div>
+      <div class="logo-sub">Football Career Simulator</div>
+    </div>
+    <div class="card" style="max-width:560px;margin:0 auto;">
+      <div class="start-hero">
+        <div class="pitch-ring"><span class="ball-icon">⚽</span></div>
+        <h2>Your Journey Begins</h2>
+        <p class="lead" style="margin-bottom:0;">
+          Create your footballer, forge your career from youth academy to legendary status.
+          Every week matters. Every decision shapes your legacy.
+        </p>
+        <button class="btn btn-primary btn-start" onclick="App.goTo(1)">Create Player →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 1 — BASIC INFO
+  ══════════════════════════════════════ -->
+  <div class="screen" id="screen-1">
+    <div class="steps-bar" id="steps-1"></div>
+    <div class="card">
+      <div class="section-label">Step 1 of 4</div>
+      <h2>Who Are You?</h2>
+      <p class="lead">Your name, starting age — the first page of your story.</p>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="firstName">First Name</label>
+          <input type="text" id="firstName" placeholder="Marcus" maxlength="20">
+          <span class="field-error" id="err-first">Enter your first name</span>
+        </div>
+        <div class="form-group">
+          <label for="lastName">Last Name</label>
+          <input type="text" id="lastName" placeholder="Silva" maxlength="24">
+          <span class="field-error" id="err-last">Enter your last name</span>
+        </div>
+        <div class="form-group full">
+          <label for="nickname">Nickname <span class="opt-label">(optional)</span></label>
+          <input type="text" id="nickname" placeholder="The Flash" maxlength="20">
+        </div>
+        <div class="form-group full">
+          <label>Starting Age</label>
+          <div class="age-slider-wrap">
+            <div class="age-display" id="ageDisplay">17</div>
+            <div class="age-info">
+              <input type="range" id="ageSlider" min="15" max="30" value="17"
+                oninput="App.updateAge(this.value)">
+              <div class="range-labels">
+                <span>15 — Youth Academy</span>
+                <span>30 — Veteran</span>
+              </div>
+              <p id="ageDesc" class="age-desc-text"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="App.goTo(0)">← Back</button>
+        <button class="btn btn-primary" onclick="App.validateStep1()">Continue →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 2 — NATIONALITY
+  ══════════════════════════════════════ -->
+  <div class="screen" id="screen-2">
+    <div class="steps-bar" id="steps-2"></div>
+    <div class="card">
+      <div class="section-label">Step 2 of 4</div>
+      <h2>Nationality</h2>
+      <p class="lead">Where does your footballer come from?</p>
+      <div class="nation-search">
+        <input type="text" id="nationSearch" placeholder="🔍  Search country…" oninput="App.filterNations(this.value)">
+      </div>
+      <div class="nations-grid" id="nationsGrid"></div>
+      <span class="field-error" id="err-nation" style="margin-top:10px;">Please select a nationality</span>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="App.goTo(1)">← Back</button>
+        <button class="btn btn-primary" onclick="App.validateStep2()">Continue →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 3 — POSITION & STYLE
+  ══════════════════════════════════════ -->
+  <div class="screen" id="screen-3">
+    <div class="steps-bar" id="steps-3"></div>
+    <div class="card">
+      <div class="section-label">Step 3 of 4</div>
+      <h2>Position & Style</h2>
+      <p class="lead">Your role on the pitch and the archetype that defines your game.</p>
+
+      <label class="field-label">Position</label>
+      <div class="position-grid" id="posGrid"></div>
+      <span class="field-error" id="err-pos">Please select a position</span>
+
+      <label class="field-label" style="margin-top:24px;">Preferred Foot</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="pos-btn" onclick="App.selectFoot('Right')" id="foot-Right"><span class="pos-acronym">R</span><span class="pos-name">Right Foot</span></div>
+        <div class="pos-btn" onclick="App.selectFoot('Left')"  id="foot-Left"> <span class="pos-acronym">L</span><span class="pos-name">Left Foot</span></div>
+        <div class="pos-btn" onclick="App.selectFoot('Both')"  id="foot-Both"> <span class="pos-acronym">B</span><span class="pos-name">Both Feet</span></div>
+      </div>
+
+      <label class="field-label" style="margin-top:24px;">Playing Style</label>
+      <div class="trait-grid" id="traitGrid"></div>
+      <span class="field-error" id="err-trait">Pick a playing style</span>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="App.goTo(2)">← Back</button>
+        <button class="btn btn-primary" onclick="App.validateStep3()">Continue →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 4 — REVIEW
+  ══════════════════════════════════════ -->
+  <div class="screen" id="screen-4">
+    <div class="steps-bar" id="steps-4"></div>
+    <div class="card">
+      <div class="section-label">Step 4 of 4 — Review</div>
+      <h2>Ready, Player One?</h2>
+      <p class="lead">Confirm your footballer and begin the career.</p>
+
+      <div id="reviewPlayerCard"></div>
+
+      <div class="summary-grid" id="summaryGrid"></div>
+
+      <label class="field-label">Starting Attributes</label>
+      <div class="stat-bars" id="statBars"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="App.goTo(3)">← Edit</button>
+        <button class="btn btn-primary" style="font-size:16px;" onclick="App.startCareer()">⚽ Begin Career</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       SCREEN 5 — SEASON DASHBOARD
+  ══════════════════════════════════════ -->
+  <div class="screen" id="screen-5">
+    <!-- Top nav -->
+    <div class="dash-topbar">
+      <div>
+        <div class="dash-greeting" id="dashGreeting"></div>
+        <div class="dash-subtitle" id="dashSubtitle"></div>
+      </div>
+      <div class="topbar-right">
+        <div class="season-badge" id="seasonBadge"></div>
+        <button class="btn btn-ghost" onclick="App.goTo(0);App.resetGame();" title="New Career">↩ New Career</button>
+      </div>
+    </div>
+
+    <!-- Player card -->
+    <div id="dashPlayerCard" style="margin-bottom:20px;"></div>
+
+    <!-- Season progress -->
+    <div id="seasonProgress" style="margin-bottom:20px;"></div>
+
+    <!-- Season stats pills -->
+    <div class="stats-pill-row" id="seasonStatPills" style="margin-bottom:20px;"></div>
+
+    <!-- Main grid -->
+    <div class="dash-main-grid">
+
+      <!-- LEFT: Week simulation panel -->
+      <div class="dash-col-main">
+        <div class="card week-panel">
+          <div class="week-panel-header">
+            <div>
+              <div class="section-label">Current Week</div>
+              <div class="week-title" id="currentWeekLabel">Pre-Season</div>
+            </div>
+            <div class="week-actions">
+              <button class="btn btn-primary" id="advanceBtn" onclick="App.advanceWeek()" style="padding:12px 24px;">
+                ▶ Advance Week
+              </button>
+              <button class="btn btn-accent2" id="skipMonthBtn" onclick="App.skipMonth()" style="padding:12px 18px;" title="Skip to next month">
+                ⏩ Skip Month
+              </button>
+            </div>
+          </div>
+
+          <!-- Last week result -->
+          <div id="lastWeekEvents" class="last-week-events">
+            <div class="empty-state">
+              <div style="font-size:48px;margin-bottom:12px;">⚽</div>
+              <div>Click <strong>Advance Week</strong> to simulate your first week</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Week history -->
+        <div class="card" style="padding:24px;margin-top:16px;">
+          <div class="section-label">Season Log</div>
+          <div id="weekHistory" class="week-history"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Attributes + career log -->
+      <div class="dash-col-side">
+        <!-- Attributes -->
+        <div class="card" style="padding:24px;margin-bottom:16px;">
+          <div class="section-label">Attributes</div>
+          <div class="attr-grid" id="dashAttrs"></div>
+          <div style="margin-top:16px;">
+            <div class="section-label">Form (Last 5)</div>
+            <div id="formDots" style="margin-top:6px;"></div>
+          </div>
+          <div style="margin-top:16px;">
+            <div class="section-label">Potential</div>
+            <div class="pot-display" id="potDisplay"></div>
+          </div>
+        </div>
+
+        <!-- Career Log -->
+        <div class="card" style="padding:24px;">
+          <div class="section-label">Career Timeline</div>
+          <ul class="career-timeline" id="careerLog"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Season end modal backdrop -->
+    <div id="seasonEndModal" class="modal-backdrop" style="display:none;">
+      <div class="modal-box">
+        <div class="modal-title">🏁 Season Complete!</div>
+        <div id="modalContent"></div>
+        <button class="btn btn-primary" style="width:100%;margin-top:20px;" onclick="App.nextSeason()">
+          ➡ Begin Next Season
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Scripts — order matters -->
+<script src="js/data.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/state.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
