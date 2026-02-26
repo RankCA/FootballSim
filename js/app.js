@@ -252,7 +252,7 @@ function stepIdentityHTML(){
     <div class="form-grid">
       <div class="form-group"><label>First Name</label><input type="text" id="f-firstName" value="${draft.firstName}" placeholder="Marcus" maxlength="20"><span class="field-error" id="err-first">Enter your first name</span></div>
       <div class="form-group"><label>Last Name</label><input type="text" id="f-lastName" value="${draft.lastName}" placeholder="Silva" maxlength="24"><span class="field-error" id="err-last">Enter your last name</span></div>
-      <div class="form-group full"><label>Nickname <span style="font-size:10px;color:var(--text-muted);text-transform:none;letter-spacing:0;">(optional)</span></label><input type="text" id="f-nickname" value="${draft.nickname}" placeholder="The Flash" maxlength="20"></div>
+      <div class="form-group full"><label>Nickname <span style="font-size:10px;color:var(--text-muted);text-transform:none;letter-spacing:0;">(optional)</span></label><input type="text" id="f-nickname" value="${draft.nickname}" placeholder="" maxlength="20"></div>
       <div class="form-group full">
         <label>Starting Age</label>
         <div class="age-slider-wrap">
