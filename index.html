@@ -3,8 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ProPath</title>
-<link rel="icon" type="image/x-icon" href="ball.png">
+<title>ProPath — Football Career Simulator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
@@ -15,7 +14,7 @@
 
 <!-- ════ SCREEN 0: SPLASH ════ -->
 <div class="screen active" id="screen-0">
-  <div class="logo"><div class="logo-wordmark">ProPath</div><div class="logo-sub">Football Career Simulator · v4</div></div>
+  <div class="logo"><div class="logo-wordmark">ProPath</div><div class="logo-sub">Football Career Simulator · v3</div></div>
   <div class="card" style="max-width:520px;margin:0 auto;">
     <div class="start-hero">
       <div class="pitch-ring"><span class="ball-icon">⚽</span></div>
@@ -76,6 +75,7 @@
     <button class="tab-btn" data-tab="manager" onclick="App.switchTab('manager')">🧑‍💼 Manager</button>
     <button class="tab-btn" data-tab="training" onclick="App.switchTab('training')">💪 Train & Invest</button>
     <button class="tab-btn" data-tab="career" onclick="App.switchTab('career')">📋 Career</button>
+    <button class="tab-btn" data-tab="casino" onclick="App.switchTab('casino')">🎰 Casino</button>
   </div>
 
   <!-- ── OVERVIEW TAB ── -->
@@ -95,7 +95,8 @@
               <button class="btn btn-ghost" id="skipMonthBtn" onclick="App.skipMonth()">⏭ Month</button>
             </div>
           </div>
-          <div id="lastDayEvents" class="day-events">
+          <div id="nextFixturePanel" style="margin-bottom:12px;"></div>
+  <div id="lastDayEvents" class="day-events">
             <div class="empty-state">⚽<br><br>Click <strong>Next Day</strong> to start your career.</div>
           </div>
         </div>
@@ -192,6 +193,7 @@
       <div class="card">
         <div class="section-label">Career Statistics</div>
         <div id="careerStatsGrid"></div>
+  <div class="tab-pane" id="tab-casino"><div id="casinoContent"></div></div>
       </div>
       <div class="card">
         <div class="section-label">Achievements</div>
