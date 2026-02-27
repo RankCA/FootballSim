@@ -75,6 +75,7 @@
     <button class="tab-btn" data-tab="manager" onclick="App.switchTab('manager')">🧑‍💼 Manager</button>
     <button class="tab-btn" data-tab="training" onclick="App.switchTab('training')">💪 Train & Invest</button>
     <button class="tab-btn" data-tab="career" onclick="App.switchTab('career')">📋 Career</button>
+    <button class="tab-btn" data-tab="casino" onclick="App.switchTab('casino')">🎰 Casino</button>
   </div>
 
   <!-- ── OVERVIEW TAB ── -->
@@ -94,7 +95,8 @@
               <button class="btn btn-ghost" id="skipMonthBtn" onclick="App.skipMonth()">⏭ Month</button>
             </div>
           </div>
-          <div id="lastDayEvents" class="day-events">
+          <div id="nextFixturePanel" style="margin-bottom:12px;"></div>
+  <div id="lastDayEvents" class="day-events">
             <div class="empty-state">⚽<br><br>Click <strong>Next Day</strong> to start your career.</div>
           </div>
         </div>
@@ -202,6 +204,8 @@
       <div id="careerMatchHistory" class="log-history" style="max-height:320px;"></div>
     </div>
   </div>
+
+  <div class="tab-pane" id="tab-casino"><div id="casinoContent" style="padding:4px 0;"></div></div>
 
 </div><!-- /screen-5 -->
 
