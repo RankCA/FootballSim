@@ -1,11 +1,9 @@
 // ════════════════════════════════════════════════════════════
-//  ProPath v3 — state.js
-//  Game state, day simulation, season logic, event handlers
+//  ProPath v4 — state.js
 // ════════════════════════════════════════════════════════════
 
-let G={};  // global game state
+let G={};
 
-// ── Init ──────────────────────────────────────────────────────
 function initGame(draft){
   const attrs=E.buildAttrs(draft.position,draft.age,draft.trait);
   const ovr=E.calcOVR(attrs,draft.position);
@@ -13,45 +11,23 @@ function initGame(draft){
   const startClub=assignStartClub(draft.age,ovr);
   const league=LEAGUES.find(l=>l.tier===startClub.tier)||LEAGUES[0];
   const year=new Date().getFullYear();
-  const managerName=E.pick(MANAGER_NAMES);
 
   G={
-    player:{
-      firstName:draft.firstName,lastName:draft.lastName,nickname:draft.nickname||'',
-      age:draft.age,nation:draft.nation,position:draft.position,foot:draft.foot,trait:draft.trait,
-      attrs,overall:ovr,potential:pot,
-    },
-    club:{name:startClub.clubName,tier:startClub.tier,leagueId:league.id,contractYears:3,isFreeAgent:false},
-    manager:{name:managerName,favouriteOf:false,teamAvgOVR:E.rand(58,74)},
-    wallet:startClub.salary*6,
-    weeklySalary:startClub.salary,
-    passiveIncome:0,
-    investments:[],
+    player:{firstName:draft.firstName,lastName:draft.lastName,nickname:draft.nickname||'',age:draft.age,nation:draft.nation,position:draft.position,foot:draft.foot,trait:draft.trait,attrs,overall:ovr,potential:pot,ageCapExtensions:0},
+    club:{name:startClub.clubName,tier:startClub.tier,leagueId:league.id,contractYears:3,isFreeAgent:false,contractSignedDay:-999},
+    manager:{name:E.pick(MANAGER_NAMES),title:E.pick(MANAGER_TITLES),teamAvgOVR:E.rand(58,74)},
+    wallet:startClub.salary*6,weeklySalary:startClub.salary,passiveIncome:0,investments:[],
     season:{number:1,startYear:year,dayOfSeason:0,totalDays:365,finished:false},
     seasonStats:{goals:0,assists:0,apps:0,motm:0,yellows:0,reds:0,wins:0,draws:0,losses:0,ratingSum:0,ratingCount:0,avgRating:0,cleanSheets:0},
-    careerStats:{goals:0,assists:0,apps:0,motm:0,seasons:0,trophies:0,reds:0,bestOVR:ovr,highestLeague:startClub.tier},
-    achievements:new Set(),
-    careerLog:[],
-    dayLog:[],
-    matchHistory:[],
-    pendingTransferOffers:[],  // {id, fromClub, tier, salary, contractYears, expires}
-    league:{
-      name:league.name,tier:startClub.tier,
-      teams:E.generateLeague(startClub.tier,startClub.clubName),
-      matchdays:E.scheduleLeague(startClub.tier,365),
-      nextMatchIdx:0,
-    },
+    careerStats:{goals:0,assists:0,apps:0,motm:0,seasons:0,trophies:0,reds:0,bestOVR:ovr,highestLeague:startClub.tier,intlCaps:0,wcAppearances:0},
+    achievements:new Set(),careerLog:[],dayLog:[],matchHistory:[],
+    pendingTransferOffers:[],
+    league:{name:league.name,tier:startClub.tier,teams:E.generateLeague(startClub.tier,startClub.clubName),matchdays:E.scheduleLeague(startClub.tier,365),nextMatchIdx:0},
     cups:E.scheduleCups(startClub.tier),
-    form:[],
-    injuryDaysLeft:0,
-    forcedStarter:0,   // days of guaranteed start (from teammate injury event)
-    agentUpgraded:false,
-    triggeredEvents:new Set(),
-    pendingEvent:null,   // event waiting to be shown as blocker
-    loanActive:false,
-    loanDaysLeft:0,
+    form:[],injuryDaysLeft:0,careerInjuryMonthsLeft:0,forcedStarter:0,
+    agentUpgraded:false,triggeredEvents:new Set(),pendingEvent:null,
+    loanActive:false,loanDaysLeft:0,wcYear:null,
   };
-
   G.careerLog.push({icon:'⚽',title:'Career Begins',detail:`${draft.firstName} ${draft.lastName} signs for ${startClub.clubName}`,date:'Pre-Season'});
 }
 
@@ -64,66 +40,87 @@ function assignStartClub(age,ovr){
 }
 
 // ── Day Simulation ────────────────────────────────────────────
+// NOTE: simulateDay does NOT increment dayOfSeason — app.js does that
 function simulateDay(){
   const day=G.season.dayOfSeason;
   const phase=E.getSeasonPhase(day);
   const events=[];
 
-  // Injury recovery
+  // Long-term ACL rehab
+  if(G.careerInjuryMonthsLeft>0){
+    if(day%30===0){
+      G.careerInjuryMonthsLeft--;
+      events.push({type:'injury',icon:'🚑',title:`ACL Rehab — ${G.careerInjuryMonthsLeft} month${G.careerInjuryMonthsLeft!==1?'s':''} left`,detail:'Long road back. Physio, pool, and gym only.'});
+    } else {
+      events.push({type:'injury',icon:'🏥',title:'Rehabilitation Day',detail:'Slowly rebuilding strength and movement.'});
+    }
+    return{events,blockingEvent:null};
+  }
+
+  // Regular injury
   if(G.injuryDaysLeft>0){
     G.injuryDaysLeft--;
     events.push({type:'injury',icon:'🤕',title:'Recovery Day',detail:`Physio work and pool sessions. ${G.injuryDaysLeft} day${G.injuryDaysLeft!==1?'s':''} remaining.`});
     return{events,blockingEvent:null};
   }
 
-  // Weekly wages + passive income (every 7 days)
-  if(day>0 && day%7===0 && !G.club.isFreeAgent){
+  // Weekly wages
+  if(day>0&&day%7===0&&!G.club.isFreeAgent){
     G.wallet+=G.weeklySalary;
-    let incomeDetail=`+£${G.weeklySalary.toLocaleString()} wages received.`;
-    if(G.passiveIncome>0){
-      G.wallet+=G.passiveIncome;
-      incomeDetail+=` +£${G.passiveIncome.toLocaleString()} investment returns.`;
-    }
-    events.push({type:'salary',icon:'💰',title:'Weekly Payment',detail:incomeDetail});
+    let det=`+£${G.weeklySalary.toLocaleString()} wages received.`;
+    if(G.passiveIncome>0){G.wallet+=G.passiveIncome;det+=` +£${G.passiveIncome.toLocaleString()} investment returns.`;}
+    events.push({type:'salary',icon:'💰',title:'Weekly Payment',detail:det});
   }
 
-  // Transfer offer expiry check
+  // Transfer offer expiry
   G.pendingTransferOffers=G.pendingTransferOffers.filter(o=>{
-    if(o.expires<=day){
-      G.careerLog.push({icon:'⌛',title:'Transfer Offer Expired',detail:`${o.fromClub}'s offer lapsed`,date:E.getDayLabel(day)});
-      return false;
-    }
+    if(o.expires<=day){G.careerLog.push({icon:'⌛',title:'Transfer Offer Expired',detail:`${o.fromClub}'s offer lapsed`,date:E.getDayLabel(day)});return false;}
     return true;
   });
 
-  // Check for random blocking event
+  // World Cup check (WC years: current year divisible by 4 with offset, day 300-330)
+  if(!G.pendingEvent&&!G.wcYear){
+    const curYear=G.season.startYear;
+    const isWCYear=(curYear%4===2); // 2026,2030,2034...
+    if(isWCYear&&day>=300&&day<=332){
+      const nat=NATIONS.find(n=>n.name===G.player.nation);
+      if(nat&&G.player.overall>=nat.callupOVR){
+        G.wcYear=curYear;
+        G.pendingEvent={id:'evt_world_cup',isWorldCup:true,icon:'🌍',title:'WORLD CUP CALL-UP!',choices:[
+          {label:`🌍 Represent ${nat.flag} ${G.player.nation}`,outcome:'Accept the call-up. Play for history.',fn:'wcPlay'},
+          {label:'❌ Pull out — club commitments',outcome:'Withdraw from the squad.',fn:'wcDecline'},
+        ]};
+        return{events,blockingEvent:G.pendingEvent};
+      }
+    }
+  }
+
+  // Random blocking event
   const blockingEvent=checkRandomEvent(day);
-  if(blockingEvent) return{events,blockingEvent};
+  if(blockingEvent)return{events,blockingEvent};
 
   // Match or training
-  const isLeagueDay=G.league.matchdays.includes(day) && !G.club.isFreeAgent;
+  const isLeagueDay=G.league.matchdays.includes(day)&&!G.club.isFreeAgent;
   const cupsToday=Object.entries(G.cups||{}).filter(([id,c])=>!c.eliminated&&c.matchDays?.includes(day));
 
-  if(isLeagueDay){
-    events.push(...simulateLeagueMatch(day));
-  } else if(cupsToday.length>0){
-    cupsToday.forEach(([id,cup])=>events.push(...simulateCupMatch(id,cup,day)));
-  } else if(phase==='season'){
-    if(E.chance(0.06)) events.push({type:'training',icon:'🎽',title:'Reserve Match',detail:'Extra minutes in the reserve fixture — staying sharp.'});
+  if(isLeagueDay)events.push(...simulateLeagueMatch(day));
+  else if(cupsToday.length>0)cupsToday.forEach(([id,cup])=>events.push(...simulateCupMatch(id,cup,day)));
+  else if(phase==='season'){
+    if(E.chance(0.06))events.push({type:'training',icon:'🎽',title:'Reserve Match',detail:'Extra minutes in the reserve fixture.'});
     else events.push({type:'training',...E.pick(TRAINING_EVENTS)});
-    if(E.chance(0.035)) {const g=simulateGrowth();if(g)events.push(g);}
+    if(E.chance(0.035)){const g=simulateGrowth();if(g)events.push(g);}
   } else {
     events.push({type:'training',...E.pick(OFFSEASON_EVENTS)});
     if(E.chance(0.025)){const g=simulateGrowth();if(g)events.push(g);}
   }
 
-  // Random match injury
-  if(events.some(e=>e.type==='match') && E.chance(0.045) && G.injuryDaysLeft===0){
-    const days=E.rand(4,18);
-    G.injuryDaysLeft=days;
+  // Match injury
+  if(events.some(e=>e.type==='match')&&E.chance(0.045)&&G.injuryDaysLeft===0&&G.careerInjuryMonthsLeft===0){
+    const days=E.rand(4,18);G.injuryDaysLeft=days;
     const types=['Hamstring tweak','Ankle knock','Muscle strain','Bruised ribs','Hip flexor issue'];
-    events.push({type:'injury',icon:'🤕',title:`Injury — ${days} days out`,detail:E.pick(types)});
-    G.careerLog.push({icon:'🤕',title:'Injury',detail:`${E.pick(types)} — ${days} days recovery`,date:E.getDayLabel(day)});
+    const t=E.pick(types);
+    events.push({type:'injury',icon:'🤕',title:`Injury — ${days} days out`,detail:t});
+    G.careerLog.push({icon:'🤕',title:'Injury',detail:`${t} — ${days} days recovery`,date:E.getDayLabel(day)});
   }
 
   checkMilestones(events,day);
@@ -135,19 +132,15 @@ function simulateLeagueMatch(day){
   const mi=G.league.nextMatchIdx||0;
   G.league.nextMatchIdx=mi+1;
   const opponents=G.league.teams.filter(t=>!t.isPlayer);
-  const opp=opponents[mi%(opponents.length)];
+  const opp=opponents[mi%opponents.length];
   const teamAvg=G.manager.teamAvgOVR;
-
   const selection=G.forcedStarter>0?'start':E.selectPlayer(G.player.overall,teamAvg);
   if(G.forcedStarter>0)G.forcedStarter--;
-
   if(selection==='out'){
     const res=E.simulateAIMatch({ovr:teamAvg},{ovr:opp.ovr});
     updateLeagueTable(G.club.name,opp.name,res.hg,res.ag,true);
-    return[{type:'match',icon:'🪑',title:`Not Selected — ${G.club.name} vs ${opp.name}`,
-      detail:`Left out of the squad. ${G.club.name} ${res.hg>res.ag?'won':'drew or lost'} ${res.hg}-${res.ag}.`,selection:'out'}];
+    return[{type:'match',icon:'🪑',title:`Not Selected — ${G.club.name} vs ${opp.name}`,detail:`Left out. ${G.club.name} ${res.hg>res.ag?'won':'drew or lost'} ${res.hg}-${res.ag}.`,selection:'out'}];
   }
-
   return[runMatchSim(G.club.name,opp.name,opp.ovr,teamAvg,selection,false,day)];
 }
 
@@ -158,56 +151,37 @@ function simulateCupMatch(cupId,cup,day){
   const oppOVR=E.rand(58,80);
   const oppName=E.pick(CLUBS[oppTier]||CLUBS[3]);
   const selection=E.selectPlayer(G.player.overall,G.manager.teamAvgOVR);
-  const events=[];
-
-  const res=runMatchSim(`${G.club.name}`,oppName,oppOVR,G.manager.teamAvgOVR,selection,true,day);
+  const res=runMatchSim(G.club.name,oppName,oppOVR,G.manager.teamAvgOVR,selection,true,day);
   res.title=`${cupDef.icon} ${cupDef.name} (${stageLabel}): ${res.title}`;
-  events.push(res);
-
   const win=res.result==='W';
-  if(win){
-    cup.stage++;
-    if(cup.stage>=cupDef.rounds.length){
-      cup.winner=true;cup.eliminated=true;
-      G.careerStats.trophies++;
-      G.careerLog.push({icon:'🏆',title:`${cupDef.name} Winner!`,detail:'Lifted the trophy!',date:E.getDayLabel(day)});
-      events.push({type:'milestone',icon:'🏆',title:`🎉 ${cupDef.name} Won!`,detail:'The dressing room erupts!'});
-      showToast(`🏆 ${cupDef.name} Winner!`,'');
-    }
-  } else {
-    cup.eliminated=true;
-  }
+  if(win){cup.stage++;if(cup.stage>=cupDef.rounds.length){cup.winner=true;cup.eliminated=true;G.careerStats.trophies++;G.careerLog.push({icon:'🏆',title:`${cupDef.name} Winner!`,detail:'Lifted the trophy!',date:E.getDayLabel(day)});showToast(`🏆 ${cupDef.name} Winner!`,'');}}
+  else cup.eliminated=true;
   G.cups[cupId]=cup;
-  return events;
+  return[res];
 }
 
 function runMatchSim(homeName,awayName,oppOVR,teamOVR,selection,isCup,day){
   const isAtt=['ST','CF','LW','RW','CAM'].includes(G.player.position);
   const isMid=['CM','CDM'].includes(G.player.position);
-  const isHome=homeName===G.club.name||homeName===G.club.name+' (Cup)';
-
+  const isHome=homeName===G.club.name;
   const skillDiff=(teamOVR-oppOVR)/100;
   const homeBonus=isHome?0.08:0;
   const hg=E.chance(0.55+skillDiff+homeBonus)?E.rand(0,3):E.rand(0,1);
   const ag=E.chance(0.5-skillDiff)?E.rand(0,3):E.rand(0,1);
-
   let myGoals=0,myAssists=0,myRating=E.rand(56,80);
   const isStart=selection==='start';
   const isSub=selection==='bench';
-
   if(isStart||isSub){
-    if(isAtt&&hg>0){ myGoals=Math.min(E.rand(0,2),hg); if(hg>myGoals&&E.chance(.35))myAssists=1; }
-    else if(isMid&&hg>0){ if(E.chance(.38))myAssists=1; if(E.chance(.14))myGoals=1; }
+    if(isAtt&&hg>0){myGoals=Math.min(E.rand(0,2),hg);if(hg>myGoals&&E.chance(.35))myAssists=1;}
+    else if(isMid&&hg>0){if(E.chance(.38))myAssists=1;if(E.chance(.14))myGoals=1;}
     if(isSub){myGoals=Math.min(myGoals,1);myRating=E.clamp(myRating-6,48,82);}
   }
-
   const motm=isStart&&E.chance(.17);
   const yellow=isStart&&E.chance(.09);
   const red=!yellow&&isStart&&E.chance(.022);
   if(motm)myRating=E.clamp(myRating+E.rand(8,16),68,99);
   if(red)myRating=E.clamp(myRating-22,28,65);
   const result=hg>ag?'W':hg<ag?'L':'D';
-
   if(isStart||isSub){
     G.seasonStats.apps++;G.careerStats.apps++;
     G.seasonStats.goals+=myGoals;G.careerStats.goals+=myGoals;
@@ -219,31 +193,20 @@ function runMatchSim(homeName,awayName,oppOVR,teamOVR,selection,isCup,day){
     else if(result==='D')G.seasonStats.draws++;
     else G.seasonStats.losses++;
     if(ag===0&&['GK','CB','LB','RB','CDM'].includes(G.player.position))G.seasonStats.cleanSheets++;
-    G.seasonStats.ratingSum+=Math.round(myRating);
-    G.seasonStats.ratingCount++;
+    G.seasonStats.ratingSum+=Math.round(myRating);G.seasonStats.ratingCount++;
     G.seasonStats.avgRating=Math.round(G.seasonStats.ratingSum/G.seasonStats.ratingCount);
-    G.form.push(Math.round(myRating));
-    if(G.form.length>5)G.form.shift();
+    G.form.push(Math.round(myRating));if(G.form.length>5)G.form.shift();
   }
-
-  if(!isCup) updateLeagueTable(G.club.name,awayName,hg,ag,isHome);
-
+  if(!isCup)updateLeagueTable(G.club.name,awayName,hg,ag,isHome);
   let detail=`${isStart?'Started':isSub?'Off the bench':'Not in squad'}. `;
-  if(myGoals) detail+=`${myGoals} goal${myGoals>1?'s':''} — "${E.pick(GOAL_FLAVOUR)}". `;
-  if(myAssists) detail+=`${myAssists} assist — "${E.pick(ASSIST_FLAVOUR)}". `;
-  if(motm) detail+=`🌟 Man of the Match — "${E.pick(MOTM_FLAVOUR)}". `;
-  if(yellow) detail+=`🟨 Booked for a late challenge. `;
-  if(red) detail+=`🟥 Straight red — you'll miss the next game. `;
-  if(!myGoals&&!myAssists&&!motm&&isStart) detail+=`${myRating>=68?'Solid performance.':'Tough afternoon — room to improve.'}`;
-
-  const rec={date:E.getDayLabel(day||0),home:homeName,away:awayName,hg,ag,result,rating:Math.round(myRating),goals:myGoals,assists:myAssists,motm,yellow,red,isCup:!!isCup,selection};
-  G.matchHistory.push(rec);
-
-  // Transfer market visibility: agent watches good performances
-  if((motm||myGoals>=2||(G.agentUpgraded&&myRating>=75)) && !G.club.isFreeAgent){
-    maybeGenerateTransferOffer(day||0);
-  }
-
+  if(myGoals)detail+=`${myGoals} goal${myGoals>1?'s':''} — "${E.pick(GOAL_FLAVOUR)}". `;
+  if(myAssists)detail+=`${myAssists} assist — "${E.pick(ASSIST_FLAVOUR)}". `;
+  if(motm)detail+=`🌟 Man of the Match — "${E.pick(MOTM_FLAVOUR)}". `;
+  if(yellow)detail+=`🟨 Booked for a late challenge. `;
+  if(red)detail+=`🟥 Straight red — you'll miss the next game. `;
+  if(!myGoals&&!myAssists&&!motm&&isStart)detail+=myRating>=68?'Solid performance.':'Tough afternoon — room to improve.';
+  G.matchHistory.push({date:E.getDayLabel(day||0),home:homeName,away:awayName,hg,ag,result,rating:Math.round(myRating),goals:myGoals,assists:myAssists,motm,yellow,red,isCup:!!isCup,selection});
+  if((motm||myGoals>=2||(G.agentUpgraded&&myRating>=75))&&!G.club.isFreeAgent)maybeGenerateTransferOffer(day||0);
   return{type:'match',icon:'⚽',title:`${homeName} ${hg}–${ag} ${awayName}`,detail:detail.trim(),result,hg,ag,myGoals,myAssists,myRating:Math.round(myRating),motm,yellow,red,selection};
 }
 
@@ -260,16 +223,9 @@ function updateLeagueTable(myClub,oppName,hg,ag,myClubIsHome){
     else{team.lost++;team.form.push('L');}
     if(team.form.length>5)team.form.shift();
   };
-  applyResult(home,hg,ag);
-  applyResult(away,ag,hg);
-
-  // Simulate other AI matches
+  applyResult(home,hg,ag);applyResult(away,ag,hg);
   const others=G.league.teams.filter(t=>!t.isPlayer&&t.name!==oppName);
-  for(let i=0;i<others.length-1;i+=2){
-    const r=E.simulateAIMatch(others[i],others[i+1]);
-    applyResult(others[i],r.hg,r.ag);
-    applyResult(others[i+1],r.ag,r.hg);
-  }
+  for(let i=0;i<others.length-1;i+=2){const r=E.simulateAIMatch(others[i],others[i+1]);applyResult(others[i],r.hg,r.ag);applyResult(others[i+1],r.ag,r.hg);}
 }
 
 function simulateGrowth(){
@@ -279,8 +235,7 @@ function simulateGrowth(){
   const k=E.pick(sorted.slice(0,4));
   const cur=G.player.attrs[k];
   if(cur>=99)return null;
-  const gain=1;
-  G.player.attrs[k]=E.clamp(cur+gain,0,99);
+  G.player.attrs[k]=E.clamp(cur+1,0,99);
   G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
   const labels={pace:'Pace',shooting:'Shooting',passing:'Passing',dribbling:'Dribbling',defending:'Defending',physical:'Physical'};
   return{type:'growth',icon:'📈',title:`${labels[k]} improved`,detail:`${labels[k]} is now ${G.player.attrs[k]}`};
@@ -289,12 +244,7 @@ function simulateGrowth(){
 function checkMilestones(events,day){
   const st=G.seasonStats,cs=G.careerStats;
   const check=(key,cond,icon,title,detail)=>{
-    if(cond&&!G.achievements.has(key)){
-      G.achievements.add(key);
-      events.push({type:'milestone',icon,title,detail});
-      G.careerLog.push({icon,title,detail,date:E.getDayLabel(day)});
-      showToast(`${icon} ${title}`,'');
-    }
+    if(cond&&!G.achievements.has(key)){G.achievements.add(key);events.push({type:'milestone',icon,title,detail});G.careerLog.push({icon,title,detail,date:E.getDayLabel(day)});showToast(`${icon} ${title}`,'');}
   };
   check('g10s',st.goals>=10,'🎯','10 Season Goals!','Double figures — clinical performer.');
   check('g20s',st.goals>=20,'🔥','20-Goal Season!','Outstanding — top scorer material.');
@@ -302,25 +252,23 @@ function checkMilestones(events,day){
   check('g100c',cs.goals>=100,'🌟','100 Career Goals!','A true legend of the game.');
   check('m5s',st.motm>=5,'🏅','5 MOTMs This Season!','Consistently the best on the pitch.');
   check('app50',cs.apps>=50,'👕','50 Career Appearances','Growing into a real pro.');
-  check('app100',cs.apps>=100,'👕','100 Career Appearances','A century of caps — remarkable commitment.');
+  check('app100',cs.apps>=100,'👕','100 Career Appearances','A century of caps.');
   check('ovr70',G.player.overall>=70,'📊','Reached 70 OVR','Breaking into real quality territory.');
   check('ovr80',G.player.overall>=80,'⭐','Reached 80 OVR','Elite-level player — genuinely world-class.');
   check('invest1',G.investments.length>=1,'💰','First Investment','Your money starts working for you.');
   check('invest3',G.investments.length>=3,'💼','Property Portfolio','Three income streams — a true businessman.');
+  check('intl1',(cs.intlCaps||0)>=1,'🌍','International Debut!','First cap for your nation — a career milestone.');
 }
 
 // ── Random Events ─────────────────────────────────────────────
 function checkRandomEvent(day){
-  if(G.pendingEvent) return null;  // don't stack events
-  if(G.season.finished) return null;
-
+  if(G.pendingEvent)return null;
+  if(G.season.finished)return null;
   for(const ev of RANDOM_EVENTS){
-    if(ev.minDay && day<ev.minDay) continue;
-    if(ev.minOVR && G.player.overall<ev.minOVR) continue;
-    if(ev.maxAge && G.player.age>ev.maxAge) continue;
-    // Don't repeat unique events
-    if(['evt_youth_grant','evt_boot_deal','evt_agent_upgrade','evt_mystery_investor'].includes(ev.id) && G.triggeredEvents.has(ev.id)) continue;
-
+    if(ev.minDay&&day<ev.minDay)continue;
+    if(ev.minOVR&&G.player.overall<ev.minOVR)continue;
+    if(ev.maxAge&&G.player.age>ev.maxAge)continue;
+    if(ev.unique&&G.triggeredEvents.has(ev.id))continue;
     if(E.chance(ev.chance)){
       G.triggeredEvents.add(ev.id);
       G.pendingEvent=ev;
@@ -335,174 +283,262 @@ function resolveEvent(fnName){
   const day=G.season.dayOfSeason;
 
   const actions={
-    giveGrant:()=>{
-      G.wallet+=15000;
-      addLog('🏛️','Youth Development Grant','£15,000 deposited into your account.',day);
-      showToast('💰 +£15,000 grant received!','');
-    },
-    donateGrant:()=>{
-      addLog('❤️','Grant Donated','You directed the funds to grassroots football.',day);
-      showToast('💚 Generous gesture noted!','');
-    },
+    giveGrant:()=>{G.wallet+=15000;addLog('🏛️','Youth Development Grant','£15,000 deposited.',day);showToast('💰 +£15,000 grant received!','');},
+    donateGrant:()=>{addLog('❤️','Grant Donated','You directed the funds to grassroots football.',day);showToast('💚 Generous gesture noted!','');},
     acceptTrainingCamp:()=>{
       const stats=['pace','shooting','passing','dribbling','defending','physical'];
-      const chosen=[];
-      while(chosen.length<2){const s=E.pick(stats);if(!chosen.includes(s))chosen.push(s);}
+      const chosen=[];while(chosen.length<2){const s=E.pick(stats);if(!chosen.includes(s))chosen.push(s);}
       chosen.forEach(s=>{G.player.attrs[s]=E.clamp(G.player.attrs[s]+5,0,99);});
       G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
-      addLog('🏰','Elite Training Camp',`${chosen.join(' & ')} improved by 5 each.`,day);
-      showToast('🏰 Training camp complete! +5 to 2 stats','');
+      addLog('🏰','Elite Training Camp',`${chosen.join(' & ')} improved by 5 each.`,day);showToast('🏰 Training camp! +5 to 2 stats','');
     },
     declineEvent:()=>{},
-    teammateCrisis:()=>{
-      G.forcedStarter=21; // 3 weeks guaranteed start
-      addLog('🤕','Teammate Injured',`You step up — guaranteed starter for 3 weeks.`,day);
-      showToast('💪 You\'re in the starting XI for 3 weeks!','');
-    },
-    showBetUI:()=>{
-      // Will be handled by UI
-      UI.showBetModal();
-      return;
-    },
-    bootDeal:()=>{
-      G.wallet+=8000;
-      addLog('👟','Boot Sponsorship','£8,000 one-off signing fee received.',day);
-      showToast('👟 Boot deal signed! +£8,000','');
-    },
-    doDocumentary:()=>{
-      G.wallet+=5000;
-      addLog('🎬','Documentary Filmed','£5,000 appearance fee. Positive coverage.',day);
-      showToast('🎬 Documentary in the can! +£5,000','');
-    },
-    upgradeAgent:()=>{
-      G.agentUpgraded=true;
-      addLog('🤵','Signed with Fuentes','Top-tier agent. Transfer market visibility maximised.',day);
-      showToast('🤵 New agent signed — expect bigger offers!','');
-    },
-    dressRoomFight:()=>{
-      addLog('😤','Dressing Room Confrontation','Stood your ground. Gained squad respect.',day);
-      showToast('💪 Respect earned in the dressing room','');
-    },
-    dressRoomCool:()=>{
-      addLog('🤐','Kept Cool','Professional as ever. Manager impressed.',day);
-      showToast('✅ Maturity noted by the manager','');
-    },
-    dressRoomSwing:()=>{
-      const fine=3000;G.wallet-=fine;
-      G.careerLog.push({icon:'🥊',title:'Dressing Room Fine',detail:`£${fine.toLocaleString()} deducted for conduct.`,date:E.getDayLabel(day)});
-      showToast(`❌ Fined £${fine.toLocaleString()} for conduct`,'err');
-    },
-    restInjury:()=>{
-      G.injuryDaysLeft=5;
-      addLog('🛏️','Managed Recovery','5-day precautionary rest. Cleared the strain properly.',day);
-      showToast('🏥 5-day rest — smart decision','');
-    },
-    playThrough:()=>{
-      addLog('💉','Played Through Pain','High re-injury risk. Brave, possibly unwise.',day);
-      showToast('⚠️ Higher injury risk this month!','warn');
-    },
-    charityMatch:()=>{
-      G.wallet+=2000;
-      addLog('❤️','Charity Match','Played for a wonderful cause. £2,000 donated in your name.',day);
-      showToast('❤️ Brilliant gesture. +£2,000','');
-    },
-    charityDonate:()=>{
-      G.wallet-=1000;
-      addLog('💸','Charitable Donation','£1,000 donated. Quietly generous.',day);
-      showToast('💚 £1,000 donated — kind soul','');
-    },
-    preditResponse:()=>{
-      addLog('🎤','Classy Public Response','Measured reply went viral for the right reasons.',day);
-      showToast('👍 Public respected your response','');
-    },
-    silentResponse:()=>{
-      addLog('🤫','Silence on the Pundit','Let the football do the talking.',day);
-      showToast('⚽ Football is the best response','');
-    },
-    angryResponse:()=>{
-      G.wallet-=2000;
-      G.careerLog.push({icon:'😡',title:'Club Fine',detail:'£2,000 fine for unprofessional public comments.',date:E.getDayLabel(day)});
-      showToast('❌ Fined £2,000. Stay composed next time','err');
-    },
+    teammateCrisis:()=>{G.forcedStarter=21;addLog('🤕','Teammate Injured','Guaranteed starter for 3 weeks.',day);showToast("💪 You're in the starting XI for 3 weeks!",'');},
+    showBetUI:()=>{UI.showBetModal();return;},
+    bootDeal:()=>{G.wallet+=8000;addLog('👟','Boot Sponsorship','£8,000 signing fee received.',day);showToast('👟 Boot deal signed! +£8,000','');},
+    doDocumentary:()=>{G.wallet+=5000;addLog('🎬','Documentary Filmed','£5,000 appearance fee.',day);showToast('🎬 Documentary done! +£5,000','');},
+    upgradeAgent:()=>{G.agentUpgraded=true;addLog('🤵','Signed with Fuentes','Top-tier agent. Transfer visibility maximised.',day);showToast('🤵 New agent — expect bigger offers!','');},
+    dressRoomFight:()=>{addLog('😤','Dressing Room Confrontation','Stood your ground. Squad respect gained.',day);showToast('💪 Respect earned in the dressing room','');},
+    dressRoomCool:()=>{addLog('🤐','Kept Cool','Professional as ever.',day);showToast('✅ Maturity noted by the manager','');},
+    dressRoomSwing:()=>{G.wallet-=3000;addLog('🥊','Dressing Room Fine','£3,000 deducted for conduct.',day);showToast('❌ Fined £3,000 for conduct','err');},
+    restInjury:()=>{G.injuryDaysLeft=5;addLog('🛏️','Managed Recovery','5-day rest. Cleared properly.',day);showToast('🏥 5-day rest — smart decision','');},
+    playThrough:()=>{addLog('💉','Played Through Pain','High re-injury risk.',day);showToast('⚠️ Higher injury risk this month!','warn');},
+    charityMatch:()=>{G.wallet+=2000;addLog('❤️','Charity Match','Played for a wonderful cause. £2,000 donated.',day);showToast('❤️ +£2,000','');},
+    charityDonate:()=>{G.wallet-=1000;addLog('💸','Charitable Donation','£1,000 donated.',day);showToast('💚 £1,000 donated','');},
+    preditResponse:()=>{addLog('🎤','Classy Public Response','Measured reply went viral for the right reasons.',day);showToast('👍 Public respected your response','');},
+    silentResponse:()=>{addLog('🤫','Silence on the Pundit','Let the football do the talking.',day);showToast('⚽ Football is the best response','');},
+    angryResponse:()=>{G.wallet-=2000;addLog('😡','Club Fine','£2,000 fine for unprofessional comments.',day);showToast('❌ Fined £2,000','err');},
     scamInvest:()=>{
       if(G.wallet<20000){showToast('Not enough money!','err');return;}
       G.wallet-=20000;
-      if(E.chance(0.4)){
-        G.wallet+=48000; // 40% ROI + principal back
-        addLog('💼','Investment Pays Off','The offshore scheme returned £48,000! Unbelievable.',day);
-        showToast('🎉 Paid off! +£48,000 returned!','');
-      } else {
-        addLog('💔','Investment Lost','£20,000 gone. The man vanished.',day);
-        showToast('💸 Lost £20,000. Lesson learned.','err');
-      }
+      if(E.chance(0.4)){G.wallet+=48000;addLog('💼','Investment Pays Off','The scheme returned £48,000!',day);showToast('🎉 +£48,000 returned!','');}
+      else{addLog('💔','Investment Lost','£20,000 gone. The man vanished.',day);showToast('💸 Lost £20,000. Lesson learned.','err');}
     },
-    reportScam:()=>{
-      addLog('🕵️','Reported Suspicious Contact','Club praised your integrity.',day);
-      showToast('✅ Smart call — integrity intact','');
-    },
+    reportScam:()=>{addLog('🕵️','Reported Suspicious Contact','Club praised your integrity.',day);showToast('✅ Smart call — integrity intact','');},
     acceptLoan:()=>{
-      G.loanActive=true;G.loanDaysLeft=60;
+      G.loanActive=true;G.loanDaysLeft=60;G.forcedStarter=60;
       addLog('🔄','Emergency Loan Move','60 days of guaranteed football. Growth accelerated.',day);
-      G.forcedStarter=60;
-      // Faster growth during loan
       for(let i=0;i<3;i++){const g=simulateGrowth();if(g)G.careerLog.push({icon:'📈',title:g.title,detail:g.detail,date:E.getDayLabel(day)});}
-      showToast('✈️ Loan activated — guaranteed starts!','');
+      showToast('✈️ Loan activated!','');
     },
-    goHome:()=>{
-      addLog('🏠','Went Home','A day off to see your old coach. Returned refreshed.',day);
-      showToast('❤️ The visit meant everything to him','');
+    goHome:()=>{addLog('🏠','Went Home','A day off to see your old coach.',day);showToast("❤️ The visit meant everything to him",'');},
+    callHome:()=>{addLog('📞','Called Home','An hour-long call. He was proud.',day);showToast("📞 He's watching every game",'');},
+    contractLeakMeeting:()=>{G.wallet+=4000;addLog('📰','Contract Leak — Loyalty Bonus','Club apologised. +£4,000.',day);showToast('💰 Loyalty bonus: +£4,000','');},
+    contractLeakLaugh:()=>{addLog('😄','Laughed Off the Leak','Tensions defused.',day);showToast('😄 Dressing room loved it','');},
+    // ── Extended event handlers ────────────────────────────────
+    embraceViral:()=>{G.wallet+=5000;addLog('🌠','Viral Goal — Deals','£5,000 from engagement partnerships.',day);showToast('🌠 Viral! +£5,000','');},
+    sportsScience:()=>{
+      if(G.wallet<12000){showToast('Not enough money!','err');return;}
+      G.wallet-=12000;
+      const stats=['pace','shooting','passing','dribbling','defending','physical'];
+      const chosen=[];while(chosen.length<3){const s=E.pick(stats);if(!chosen.includes(s))chosen.push(s);}
+      chosen.forEach(s=>{G.player.attrs[s]=E.clamp(G.player.attrs[s]+3,0,99);});
+      G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+      addLog('🔬','Sports Science Programme',`${chosen.join(', ')} each improved. £12,000 invested.`,day);
+      showToast('🔬 Science works! 3 stats improved','');
     },
-    callHome:()=>{
-      addLog('📞','Called Home','An hour-long call. He was proud of everything.',day);
-      showToast('📞 He said he\'s watching every game','');
+    hirePR:()=>{G.wallet-=8000;addLog('📣','PR Firm Hired','£8,000 — controversy managed.',day);showToast('📣 Story killed. £8,000 spent','warn');},
+    publicApology:()=>{addLog('😭','Public Apology Issued','Fan trust restored.',day);showToast('👍 Fan trust restored','');},
+    ignoreControversy:()=>{addLog('🤐','Ignored Controversy','A week of bad press.',day);showToast('📰 Rough week in the press','warn');},
+    hireTaxAccountant:()=>{G.wallet-=10000;addLog('📑','Tax Investigation Resolved','£10,000 paid to specialist. Cleared.',day);showToast('📑 Tax sorted. £10,000 spent','warn');},
+    selfHandleTax:()=>{G.wallet-=5000;addLog('⚖️','Tax Penalty','£5,000 penalty for missed details.',day);showToast('❌ £5,000 tax penalty','err');},
+    acceptRecordTransfer:()=>{
+      const tier=Math.max(1,G.club.tier-1);
+      const offerLeague=LEAGUES.find(l=>l.tier===tier)||LEAGUES[0];
+      const pool=[...(CLUBS[tier]||CLUBS[1])].filter(c=>c!==G.club.name);
+      const newClub=E.pick(pool);
+      const newSalary=Math.round(G.weeklySalary*3);
+      const prevClub=G.club.name;
+      G.club={name:newClub,tier,leagueId:offerLeague.id,contractYears:4,isFreeAgent:false,contractSignedDay:day};
+      G.weeklySalary=newSalary;
+      const rtAvgRange={1:[76,90],2:[68,80],3:[60,73],4:[54,67],5:[48,62]}[tier]||[60,78];
+      G.manager={name:E.pick(MANAGER_NAMES),title:E.pick(MANAGER_TITLES),teamAvgOVR:E.rand(rtAvgRange[0],rtAvgRange[1])};
+      G.careerStats.highestLeague=Math.min(G.careerStats.highestLeague,tier);
+      const nl=LEAGUES.find(l=>l.tier===tier)||LEAGUES[0];
+      G.league={name:nl.name,tier,teams:E.generateLeague(tier,newClub),matchdays:G.league.matchdays.filter(d=>d>day),nextMatchIdx:0};
+      G.pendingTransferOffers=[];
+      addLog('💎','Record Transfer',`From ${prevClub} to ${newClub} · £${newSalary.toLocaleString()}/wk`,day);
+      showToast(`💎 Record transfer! Welcome to ${newClub}!`,'');
     },
-    contractLeakMeeting:()=>{
-      G.wallet+=4000;
-      addLog('📰','Contract Leak — Loyalty Bonus','Club apologised and paid a £4,000 loyalty bonus.',day);
-      showToast('💰 Loyalty bonus: +£4,000','');
+    stayLoyal:()=>{G.wallet+=25000;addLog('🏠','Turned Down Record Offer','£25,000 loyalty bonus.',day);showToast('🏠 Loyalty rewarded! +£25,000','');},
+    careerEndingInjury:()=>{
+      G.careerInjuryMonthsLeft=8;G.injuryDaysLeft=0;G.aclInjured=true;
+      addLog('🚑','ACL Rupture','8-month rehabilitation begins.',day);
+      showToast('🚑 ACL injury — 8 months out','err');
     },
-    contractLeakLaugh:()=>{
-      addLog('😄','Laughed Off the Leak','Your humour defused the tension brilliantly.',day);
-      showToast('😄 Dressing room loved it','');
+    retireInjury:()=>{
+      G.aclInjured=true;
+      addLog('💔','Retired Due to Injury','The injury proved too much.',day);
+      showToast('💔 Career ended by injury','err');
+      closeModal();
+      showModal(`
+        <div class="event-modal-header"><span class="event-modal-emoji">💔</span>
+          <div class="event-modal-title">Career Over</div>
+          <div class="event-modal-subtitle">The ACL injury proved insurmountable. It's time to hang up the boots.</div>
+        </div>
+        <p style="color:var(--text-dim);font-size:13px;line-height:1.75;margin-bottom:20px;">A tough end to what was a remarkable journey. Your legacy will not be forgotten.</p>
+        <button class="btn btn-primary" style="width:100%;padding:14px;font-size:14px;" onclick="saveToHOF();localStorage.removeItem('propath3_save');closeModal();App.goTo(0);">🏆 Enter the Hall of Fame</button>
+      `, true);
+      return;
+    },
+    tragicDeath:()=>{saveToHOF();localStorage.removeItem('propath3_save');closeModal();App.goTo(0);showToast('🕯️ A career that will never be forgotten.','');},
+    wcPlay:()=>{
+      const nat=NATIONS.find(n=>n.name===G.player.nation)||{flag:'🌍'};
+      const caps=E.rand(3,7);
+      G.careerStats.intlCaps=(G.careerStats.intlCaps||0)+caps;
+      G.careerStats.wcAppearances=(G.careerStats.wcAppearances||0)+1;
+      const reached=E.rand(0,WC_ROUNDS.length-1);
+      const roundName=WC_ROUNDS[reached];
+      const isChampion=reached===WC_ROUNDS.length-1;
+      if(isChampion){G.careerStats.trophies++;addLog('🌍','World Cup Winner!',`${nat.flag} ${G.player.nation} won it! You made ${caps} appearances.`,day);showToast('🌍🏆 WORLD CUP WINNER!','');}
+      else{addLog('🌍',`World Cup — ${roundName}`,`${nat.flag} ${G.player.nation} reached the ${roundName}. You made ${caps} appearances.`,day);showToast(`🌍 World Cup ${roundName} for ${G.player.nation}!`,'');}
+      const growth=E.pick(['pace','shooting','passing','dribbling','physical']);
+      G.player.attrs[growth]=E.clamp(G.player.attrs[growth]+2,0,99);
+      G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+      checkMilestones([],day);
+    },
+    wcDecline:()=>{addLog('🌍','World Cup — Pulled Out','You withdrew from the national squad.',day);showToast('🌍 Pulled out of the World Cup','warn');},
+    // Extended event handlers — all wired up
+    acceptCaptaincy:()=>{G.wallet+=3000;G.careerLog.push({icon:'🏅',title:'Club Captain',detail:`${G.club.name} captain. +£3,000 bonus.`,date:E.getDayLabel(day)});showToast('🏅 You are now club captain! +£3,000','');},
+    mentorYouth:()=>{G.wallet+=2000;addLog('🤝','Youth Mentorship','Helped a young talent find confidence. +£2,000 club bonus.',day);showToast('🤝 Mentored the kid. +£2,000','');},
+    podcastBonus:()=>{G.wallet+=3000;addLog('🎙️','Podcast Appearance','Profile raised. +£3,000 appearance fee.',day);showToast('🎙️ Great episode! +£3,000','');},
+    hatTrickBonus:()=>{G.wallet+=12000;addLog('⚽','Hat-Trick Chairman Bonus','£12,000 exceptional performance bonus.',day);showToast('⚽ Chairman bonus! +£12,000','');},
+    nutritionBoost:()=>{
+      G.player.attrs.physical=E.clamp(G.player.attrs.physical+3,0,99);
+      G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+      addLog('🥗','Nutritionist Programme','Physical +3 from the tailored diet plan.',day);
+      showToast('🥗 Physical improved by +3!','');
+    },
+    extraGym:()=>{
+      const stat=E.pick(['pace','physical','defending']);
+      G.player.attrs[stat]=E.clamp(G.player.attrs[stat]+1,0,99);
+      G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+      addLog('🏋️','Extra Gym Session',`Good use of the free day. ${stat} +1.`,day);
+      showToast(`🏋️ ${stat} improved! +1`,'');
+    },
+    rumourFuel:()=>{
+      G.weeklySalary+=1000;
+      addLog('📰','Transfer Rumour Leverage','Wage pressure worked. +£1,000/wk.',day);
+      showToast('💰 Wages up £1,000/wk from the pressure!','');
+    },
+    penaltyHero:()=>{
+      G.wallet+=500;
+      G.careerStats.goals++;G.seasonStats.goals++;
+      addLog('🥅','Penalty Hero','You stepped up and scored. Club bonus paid.',day);
+      showToast('🥅 Penalty scored! +£500 bonus','');
+    },
+    analyticsBoost:()=>{
+      G.player.attrs.passing=E.clamp(G.player.attrs.passing+2,0,99);
+      G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+      addLog('📊','Analytics-Driven Improvement','Passing +2 from data-driven adjustments.',day);
+      showToast('📊 Passing improved +2 from data insights!','');
+    },
+    autobioBoost:()=>{G.wallet+=20000;addLog('📖','Book Deal Signed','£20,000 advance received.',day);showToast('📖 Book deal! +£20,000 advance','');},
+    // ── Newest batch ─────────────────────────────────────────
+    derbyFireUp:()=>{
+      const stat=E.pick(['pace','shooting','dribbling','physical']);
+      G.player.attrs[stat]=E.clamp(G.player.attrs[stat]+1,0,99);
+      G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+      addLog('⚔️','Derby Intensity',`Fired up. ${stat} +1 for the season.`,day);
+      showToast(`⚔️ Derby fire! ${stat} +1`,'');
+    },
+    earlyReturn:()=>{
+      G.injuryDaysLeft=Math.max(0,(G.injuryDaysLeft||0)-10);
+      addLog('💉','Early Clearance','Passed all tests. Back 10 days early.',day);
+      showToast('💉 Cleared early! Back in training','');
+    },
+    fanLetterReply:()=>{addLog('💌','Fan Letter — Training Invite','She came. The whole squad was moved.',day);showToast('💌 A day nobody will forget','');},
+    fanLetterCall:()=>{addLog('💌','Fan Letter — Phone Call','She couldn\'t believe it. Pure joy.',day);showToast('💌 You made her year','');},
+    deadlineDaySign:()=>{
+      G.weeklySalary+=1500;G.club.contractSignedDay=day;
+      addLog('⏰','Deadline Day Transfer','New contract. +£1,500/wk.',day);
+      showToast('⏰ Deadline day move! +£1,500/wk','');
+    },
+    wonAward:()=>{
+      G.wallet+=5000;
+      addLog('🏅','Player of the Month','Won it! £5,000 prize money.',day);
+      showToast('🏅 Player of the Month! +£5,000','');
+    },
+    financialAdvisor:()=>{
+      if(G.wallet<15000){showToast('Not enough funds!','err');return;}
+      G.wallet-=15000;G.passiveIncome+=500;
+      addLog('💹','Financial Advisor Hired','£15,000 fee. Passive income +£500/wk permanently.',day);
+      showToast('💹 Smart money. +£500/wk passive income!','');
+    },
+    confrontManager:()=>{
+      G.forcedStarter=14;
+      addLog('😤','Manager Confrontation','Respect earned. Starting for 2 weeks.',day);
+      showToast('😤 Stood your ground! Starting XI for 2 weeks','');
+    },
+    requestListingFromRow:()=>{activateTransferList();},
+    mediaDayFun:()=>{G.wallet+=2000;addLog('📸','Media Day','Good energy. +£2,000 social uplift.',day);showToast('📸 Fans loved it! +£2,000','');},
+    cryoTherapy:()=>{
+      G.injuryDaysLeft=Math.max(0,(G.injuryDaysLeft||0)-3);
+      const stat=E.pick(['physical','pace']);
+      G.player.attrs[stat]=E.clamp(G.player.attrs[stat]+1,0,99);
+      G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+      addLog('🧊','Cryotherapy Programme',`Recovery accelerated. ${stat} +1.`,day);
+      showToast('🧊 Body feels like new! +1 '+stat,'');
+    },
+    friendlyCap:()=>{
+      G.careerStats.intlCaps=(G.careerStats.intlCaps||0)+1;
+      G.wallet+=1000;
+      addLog('🌍','International Friendly','1 cap earned. £1,000 appearance fee.',day);
+      showToast('🌍 International cap! +£1,000','');
+    },
+    agentDeal:()=>{addLog('🤵','Agent Re-signed','He stays. Bigger network, better opportunities.',day);showToast('🤵 Agent re-signed. Better deals incoming','');},
+    newAgent:()=>{G.agentUpgraded=false;addLog('🔄','New Agent Signed','Fresh relationship. Same terms.',day);showToast('🔄 Fresh start with a new agent','');},
+    legendsDinner:()=>{
+      G.wallet+=3000;
+      addLog('🍽️','Legends Dinner','An unforgettable evening. +£3,000.',day);
+      showToast('🍽️ Once in a lifetime! +£3,000','');
+    },
+    charityRun:()=>{
+      G.player.attrs.physical=E.clamp(G.player.attrs.physical+1,0,99);
+      G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+      addLog('🏃','Charity Marathon','Crossed the finish line. Physical +1.',day);
+      showToast('🏃 Marathon done! Physical +1','');
+    },
+    foreignLeagueMove:()=>{
+      const newSalary=Math.round(G.weeklySalary*2.5);
+      const tier=Math.max(1,G.club.tier);
+      const pool=[...(CLUBS[tier]||CLUBS[2])].filter(c=>c!==G.club.name);
+      const newClub=E.pick(pool);
+      const prevClub=G.club.name;
+      G.club={...G.club,name:newClub,contractSignedDay:day,contractYears:3};
+      G.weeklySalary=newSalary;
+      const tAvgRange={1:[76,90],2:[68,80],3:[60,73],4:[54,67],5:[48,62]}[tier]||[60,78];
+      G.manager={name:E.pick(MANAGER_NAMES),title:E.pick(MANAGER_TITLES),teamAvgOVR:E.rand(tAvgRange[0],tAvgRange[1])};
+      addLog('🌐','Foreign League Move',`From ${prevClub} to ${newClub}. £${newSalary.toLocaleString()}/wk`,day);
+      showToast(`🌐 Life-changing move! £${newSalary.toLocaleString()}/wk`,'');
     },
   };
 
-  if(fnName==='showBetUI'){
-    // Bet UI opens its own modal — just clear the pending event, don't close underlying
-    G.pendingEvent=null;
-    UI.showBetModal();
-    App.renderDashboard();
-    return;
-  }
-
-  if(actions[fnName]) actions[fnName]();
-  else console.warn('Unknown event action:', fnName);
-
-  // Always close the blocking modal and re-render after any event resolution
+  if(fnName==='showBetUI'){G.pendingEvent=null;closeModal();setTimeout(()=>UI.showBetModal(),50);return;}
+  if(fnName==='retireInjury'){actions.retireInjury();return;} // returns early inside, doesn't hit closeModal below
+  if(actions[fnName])actions[fnName]();
+  else console.warn('Unknown event action:',fnName);
   closeModal();
   App.renderDashboard();
 }
 
-function addLog(icon,title,detail,day){
-  G.careerLog.push({icon,title,detail,date:E.getDayLabel(day)});
-}
+function addLog(icon,title,detail,day){G.careerLog.push({icon,title,detail,date:E.getDayLabel(day)});}
 
 // ── Transfer Offers ───────────────────────────────────────────
 function maybeGenerateTransferOffer(day){
-  if(!E.chance(G.agentUpgraded?0.12:0.06)) return;
+  if(!E.chance(G.agentUpgraded?0.12:0.06))return;
   const offerTier=E.clamp(G.club.tier+E.rand(-1,1),1,5);
   const offerLeague=LEAGUES.find(l=>l.tier===offerTier)||LEAGUES[0];
-  const offerClub=E.pick(CLUBS[offerTier]||CLUBS[3]);
-  if(offerClub===G.club.name) return;
+  // FIX: Prevent same club making duplicate offers
+  const usedClubs=new Set(G.pendingTransferOffers.map(o=>o.fromClub));
+  const pool=[...(CLUBS[offerTier]||CLUBS[3])].filter(c=>c!==G.club.name&&!usedClubs.has(c));
+  if(!pool.length)return;
+  const offerClub=E.pick(pool);
   const offerId=`offer_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
   const salary=Math.round(offerLeague.salary*(0.85+Math.random()*.45));
-  G.pendingTransferOffers.push({
-    id:offerId,fromClub:offerClub,tier:offerTier,league:offerLeague.name,
-    salary,contractYears:E.rand(1,4),expires:day+30,saved:false,
-  });
+  G.pendingTransferOffers.push({id:offerId,fromClub:offerClub,tier:offerTier,league:offerLeague.name,salary,contractYears:E.rand(1,4),expires:day+30,saved:false});
   G.careerLog.push({icon:'📬',title:'Transfer Offer Received!',detail:`${offerClub} want to sign you`,date:E.getDayLabel(day)});
   showToast(`📬 Transfer offer from ${offerClub}!`,'');
-  // Update transfer tab notification
   UI.updateTransferBadge();
 }
 
@@ -510,19 +546,30 @@ function acceptTransferOffer(offerId){
   const offer=G.pendingTransferOffers.find(o=>o.id===offerId);
   if(!offer)return;
   const prevClub=G.club.name;
-  G.club={name:offer.fromClub,tier:offer.tier,leagueId:LEAGUES.find(l=>l.tier===offer.tier)?.id||'L3',contractYears:offer.contractYears,isFreeAgent:false};
+  const day=G.season.dayOfSeason;
+  G.club={name:offer.fromClub,tier:offer.tier,leagueId:LEAGUES.find(l=>l.tier===offer.tier)?.id||'L3',contractYears:offer.contractYears,isFreeAgent:false,contractSignedDay:day};
   G.weeklySalary=offer.salary;
   G.careerStats.highestLeague=Math.min(G.careerStats.highestLeague,offer.tier);
-  G.careerLog.push({icon:'✈️',title:`Transferred to ${offer.fromClub}`,detail:`From ${prevClub} · ${offer.league} · £${offer.salary.toLocaleString()}/wk`,date:E.getDayLabel(G.season.dayOfSeason)});
-  // Expire all other offers
+  // New manager with tier-appropriate OVR
+  const tAvgRange={1:[76,90],2:[68,80],3:[60,73],4:[54,67],5:[48,62]}[offer.tier]||[60,78];
+  G.manager={name:E.pick(MANAGER_NAMES),title:E.pick(MANAGER_TITLES),teamAvgOVR:E.rand(tAvgRange[0],tAvgRange[1])};
+  G.careerLog.push({icon:'✈️',title:`Transferred to ${offer.fromClub}`,detail:`From ${prevClub} · ${offer.league} · £${offer.salary.toLocaleString()}/wk`,date:E.getDayLabel(day)});
   G.pendingTransferOffers=[];
-  // Regenerate league for new club
+  // Preserve remaining matchdays — do NOT reset scores or table positions
+  // Generate fresh teams for the new club's league, carry over remaining schedule
   const newLeague=LEAGUES.find(l=>l.tier===G.club.tier)||LEAGUES[0];
-  G.league={name:newLeague.name,tier:G.club.tier,teams:E.generateLeague(G.club.tier,G.club.name),matchdays:E.scheduleLeague(G.club.tier,365-G.season.dayOfSeason),nextMatchIdx:0};
+  const remainingMatchdays=G.league.matchdays.filter(d=>d>day);
+  // Count how many matchdays have already passed to keep nextMatchIdx correct
+  const playedCount=G.league.matchdays.filter(d=>d<=day).length;
+  G.league={
+    name:newLeague.name,tier:G.club.tier,
+    teams:E.generateLeague(G.club.tier,G.club.name),
+    matchdays:remainingMatchdays.length>0?remainingMatchdays:E.scheduleLeague(G.club.tier,365-day),
+    nextMatchIdx:0, // reset to 0 since teams array is fresh
+  };
   G.cups=E.scheduleCups(G.club.tier);
-  showToast(`✈️ Welcome to ${offer.fromClub}!`,'');
-  App.renderDashboard();
-  closeModal();
+  showToast(`✈️ Welcome to ${offer.fromClub}! Manager: ${G.manager.name}`,'');
+  App.renderDashboard();closeModal();
 }
 
 function declineTransferOffer(offerId){
@@ -533,23 +580,41 @@ function declineTransferOffer(offerId){
 
 function saveOfferForLater(offerId){
   const o=G.pendingTransferOffers.find(x=>x.id===offerId);
-  if(o) o.saved=true;
-  closeModal();
-  showToast('📋 Offer saved — check the Career tab','');
-  App.renderDashboard();
+  if(o)o.saved=true;
+  closeModal();showToast('📋 Offer saved — check the Offers tab','');App.renderDashboard();
 }
 
 // ── Manager Interaction ───────────────────────────────────────
 function requestNewContract(){
   const op=E.managerOpinion(G.player.overall,G.manager.teamAvgOVR);
   const day=G.season.dayOfSeason;
-
-  if(op.opinion==='poor'||op.opinion==='sceptical'){
-    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">😕</span><div class="event-modal-title">Request Denied</div><div class="event-modal-subtitle">"Look, I'll be honest — you're not quite at the level I need right now. Keep working and come back to me." — ${G.manager.name}</div></div>
-    <div class="event-choices"><button class="event-choice" onclick="closeModal()"><div class="ec-label">👍 Understood, Manager</div><div class="ec-outcome">Back to training — you have work to do.</div></button></div>`);
+  // Normalise stored days — old saves may lack these fields
+  const signedDay=Number.isFinite(G.club.contractSignedDay)?G.club.contractSignedDay:-9999;
+  const offeredDay=Number.isFinite(G._contractOfferedDay)?G._contractOfferedDay:-9999;
+  const daysSinceSigned=day-signedDay;
+  const daysSinceOffered=day-offeredDay;
+  // 6-month cooldown after signing (180 days)
+  if(daysSinceSigned>=0&&daysSinceSigned<180){
+    const daysLeft=180-daysSinceSigned;
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">⏳</span><div class="event-modal-title">Too Soon</div><div class="event-modal-subtitle">You just signed a contract. The club won't renegotiate for 6 months.</div></div>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Come back in approximately <strong>${daysLeft}</strong> more days.</p>
+    <div class="event-choices"><button class="event-choice" onclick="closeModal()"><div class="ec-label" style="color:var(--text)">👍 Understood</div><div class="ec-outcome" style="color:var(--text-dim)">Keep working.</div></button></div>`);
     return;
   }
-
+  // 30-day cooldown after viewing/declining an offer
+  if(daysSinceOffered>=0&&daysSinceOffered<30){
+    const daysLeft=30-daysSinceOffered;
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">⏳</span><div class="event-modal-title">Not Yet</div><div class="event-modal-subtitle">You recently declined an offer. Give the club some time.</div></div>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Come back in <strong>${daysLeft}</strong> more days.</p>
+    <div class="event-choices"><button class="event-choice" onclick="closeModal()"><div class="ec-label" style="color:var(--text)">👍 OK</div></button></div>`);
+    return;
+  }
+  if(op.opinion==='poor'||op.opinion==='sceptical'){
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">😕</span><div class="event-modal-title">Request Denied</div><div class="event-modal-subtitle">"Look, I'll be honest — you're not quite at the level I need right now." — ${G.manager.name}</div></div>
+    <div class="event-choices"><button class="event-choice" onclick="closeModal()"><div class="ec-label" style="color:var(--text)">👍 Understood, Manager</div><div class="ec-outcome" style="color:var(--text-dim)">Back to training — you have work to do.</div></button></div>`);
+    return;
+  }
+  // Lock from re-requesting until this offer is accepted or dismissed
   const newSalary=Math.round(G.weeklySalary*E.rand(110,130)/100);
   const years=E.rand(2,4);
   showModal(`<div class="event-modal-header"><span class="event-modal-emoji">✍️</span><div class="event-modal-title">New Contract Offer</div><div class="event-modal-subtitle">"We want you here for the long term." — ${G.manager.name}</div></div>
@@ -560,114 +625,89 @@ function requestNewContract(){
     <div class="modal-stat"><div class="ms-label">Current Wage</div><div class="ms-val">£${G.weeklySalary.toLocaleString()}</div></div>
   </div>
   <div class="event-choices">
-    <button class="event-choice gold" onclick="signNewContract(${newSalary},${years})"><div class="ec-label">✍️ Sign the contract</div><div class="ec-outcome">Secure your future at ${G.club.name}.</div></button>
-    <button class="event-choice" onclick="closeModal()"><div class="ec-label">🤔 Think about it</div><div class="ec-outcome">Come back later.</div></button>
+    <button class="event-choice gold" onclick="signNewContract(${newSalary},${years})"><div class="ec-label" style="color:var(--text)">✍️ Sign the contract</div><div class="ec-outcome" style="color:var(--text-dim)">Secure your future at ${G.club.name}.</div></button>
+    <button class="event-choice" onclick="dismissContractOffer()"><div class="ec-label" style="color:var(--text)">🤔 Decline offer</div><div class="ec-outcome" style="color:var(--text-dim)">You won't be able to request again for 30 days.</div></button>
   </div>`);
+  // Mark a cooldown even for viewing the offer — prevents re-opening it 10 times
+  G._contractOfferedDay=day;
+}
+
+function dismissContractOffer(){
+  // 30-day cooldown on declining — stored separately from contractSignedDay
+  G._contractOfferedDay=G.season.dayOfSeason;
+  closeModal();showToast('📋 Offer declined — come back in 30 days','');App.renderDashboard();
 }
 
 function signNewContract(salary,years){
-  G.weeklySalary=salary;
-  G.club.contractYears=years;
+  G.weeklySalary=salary;G.club.contractYears=years;
+  G.club.contractSignedDay=G.season.dayOfSeason;
+  G._contractOfferedDay=null;
   addLog('✍️','Contract Signed',`£${salary.toLocaleString()}/wk · ${years}-year deal`,G.season.dayOfSeason);
-  showToast('✍️ Contract signed!','');
-  closeModal();
-  App.renderDashboard();
+  showToast('✍️ Contract signed!','');closeModal();App.renderDashboard();
 }
 
 function requestTransferListing(){
   const op=E.managerOpinion(G.player.overall,G.manager.teamAvgOVR);
   const day=G.season.dayOfSeason;
-  const ovr=G.player.overall;
-  const teamOVR=G.manager.teamAvgOVR;
-  const diff=ovr-teamOVR;
-
-  // If player is significantly better than the team, manager CANNOT block
+  const diff=G.player.overall-G.manager.teamAvgOVR;
   if(diff>=12){
-    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🌟</span><div class="event-modal-title">You're Too Good For This Club</div><div class="event-modal-subtitle">"I can't hold you back — you deserve a bigger stage." — ${G.manager.name}</div></div>
-    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">Your quality is undeniable — ${ovr} OVR vs a squad averaging ${teamOVR}. The club has no choice but to list you. Expect offers from higher divisions.</p>
-    <div class="event-choices">
-      <button class="event-choice gold" onclick="activateTransferList()"><div class="ec-label">📋 Go on the list — find a bigger club</div><div class="ec-outcome">Your agent contacts every club in the top divisions immediately.</div></button>
-      <button class="event-choice" onclick="closeModal()"><div class="ec-label">↩ Stay loyal for now</div><div class="ec-outcome">You turn down the chance. For now.</div></button>
-    </div>`);
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🌟</span><div class="event-modal-title">You're Too Good For This Club</div><div class="event-modal-subtitle">"I can't hold you back." — ${G.manager.name}</div></div>
+    <div class="event-choices"><button class="event-choice gold" onclick="activateTransferList()"><div class="ec-label" style="color:var(--text)">📋 Go on the list</div><div class="ec-outcome" style="color:var(--text-dim)">Your agent contacts clubs immediately.</div></button><button class="event-choice" onclick="closeModal()"><div class="ec-label" style="color:var(--text)">↩ Stay loyal for now</div><div class="ec-outcome" style="color:var(--text-dim)">For now.</div></button></div>`);
     return;
   }
-
-  // If player is clearly above average (diff 6-11), they can push hard
   if(diff>=6){
-    // Buy out clause — force a listing by paying a small fee
     const buyout=Math.round(G.weeklySalary*4);
-    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">💼</span><div class="event-modal-title">Manager is Reluctant</div><div class="event-modal-subtitle">"You've been important to us... but I can see you're ready for more." — ${G.manager.name}</div></div>
-    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">The manager acknowledges your quality (${ovr} OVR) but isn't ready to lose you easily. You can push harder — or invoke your contract clause.</p>
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">💼</span><div class="event-modal-title">Manager is Reluctant</div><div class="event-modal-subtitle">"I can see you're ready for more." — ${G.manager.name}</div></div>
     <div class="event-choices">
-      <button class="event-choice gold" onclick="activateTransferList()"><div class="ec-label">🗣️ Push hard — demand a listing</div><div class="ec-outcome">You force the issue. Offers will come, but the manager relationship takes a hit.</div></button>
-      <button class="event-choice" onclick="payBuyout(${buyout})"><div class="ec-label">💰 Pay contract clause — £${buyout.toLocaleString()}</div><div class="ec-outcome">Settle the fee and walk. Clean break, immediate listing.</div></button>
-      <button class="event-choice" onclick="closeModal()"><div class="ec-label">↩ Back down for now</div><div class="ec-outcome">Bide your time.</div></button>
+      <button class="event-choice gold" onclick="activateTransferList()"><div class="ec-label" style="color:var(--text)">🗣️ Push hard — demand a listing</div><div class="ec-outcome" style="color:var(--text-dim)">Force the issue.</div></button>
+      <button class="event-choice" onclick="payBuyout(${buyout})"><div class="ec-label" style="color:var(--text)">💰 Pay contract clause — £${buyout.toLocaleString()}</div><div class="ec-outcome" style="color:var(--text-dim)">Clean break.</div></button>
+      <button class="event-choice" onclick="closeModal()"><div class="ec-label" style="color:var(--text)">↩ Back down</div><div class="ec-outcome" style="color:var(--text-dim)">Bide your time.</div></button>
     </div>`);
     return;
   }
-
-  // Good standing — manager blocks it
   if(op.opinion==='favourable'||op.opinion==='good'){
-    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">😤</span><div class="event-modal-title">Request Denied</div><div class="event-modal-subtitle">"I'm not selling you — you're too important to us right now." — ${G.manager.name}</div></div>
-    <p style="color:var(--text-dim);font-size:13px;margin-bottom:14px;">The manager values you too much to let you go. You need to be a clear step above the squad to force through a move, or wait until your stock drops.</p>
-    <div class="event-choices"><button class="event-choice" onclick="closeModal()"><div class="ec-label">👍 Understood — keep working</div><div class="ec-outcome">Your time will come.</div></button></div>`);
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">😤</span><div class="event-modal-title">Request Denied</div><div class="event-modal-subtitle">"I'm not selling you — you're too important." — ${G.manager.name}</div></div>
+    <div class="event-choices"><button class="event-choice" onclick="closeModal()"><div class="ec-label" style="color:var(--text)">👍 Understood</div><div class="ec-outcome" style="color:var(--text-dim)">Your time will come.</div></button></div>`);
     return;
   }
-
-  // Neutral/poor — manager will let you go
   showModal(`<div class="event-modal-header"><span class="event-modal-emoji">📋</span><div class="event-modal-title">Transfer Listed</div><div class="event-modal-subtitle">"If the right offer comes in, we'll discuss it." — ${G.manager.name}</div></div>
-  <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">You're now on the transfer list. Clubs across all divisions will start making enquiries.</p>
   <div class="event-choices">
-    <button class="event-choice gold" onclick="activateTransferList()"><div class="ec-label">📋 Confirm transfer listing</div><div class="ec-outcome">Your agent gets to work immediately.</div></button>
-    <button class="event-choice" onclick="closeModal()"><div class="ec-label">↩ Change of heart</div><div class="ec-outcome">You'll stay and compete.</div></button>
+    <button class="event-choice gold" onclick="activateTransferList()"><div class="ec-label" style="color:var(--text)">📋 Confirm transfer listing</div><div class="ec-outcome" style="color:var(--text-dim)">Your agent gets to work immediately.</div></button>
+    <button class="event-choice" onclick="closeModal()"><div class="ec-label" style="color:var(--text)">↩ Change of heart</div><div class="ec-outcome" style="color:var(--text-dim)">You'll stay and compete.</div></button>
   </div>`);
 }
 
 function payBuyout(amount){
   if(G.wallet<amount){showToast('Not enough money for the buyout!','err');return;}
-  G.wallet-=amount;
-  addLog('💰','Contract Buyout Paid',`£${amount.toLocaleString()} paid — now on the transfer list.`,G.season.dayOfSeason);
+  G.wallet-=amount;addLog('💰','Contract Buyout Paid',`£${amount.toLocaleString()} paid — now on the transfer list.`,G.season.dayOfSeason);
   activateTransferList();
 }
 
 function activateTransferList(){
   const diff=G.player.overall-G.manager.teamAvgOVR;
-  // Bigger difference = more offers, from higher tiers
   const n=diff>=12?E.rand(4,6):diff>=6?E.rand(3,5):E.rand(2,4);
+  const tierBias=diff>=12?-2:diff>=6?-1:0;
+  const usedClubs=new Set(G.pendingTransferOffers.map(o=>o.fromClub));
   for(let i=0;i<n;i++){
-    // Overqualified players attract higher-division interest
-    const tierBias=diff>=12?-2:diff>=6?-1:0;
     const offerTier=E.clamp(G.club.tier+tierBias+E.rand(-1,1),1,5);
     const offerLeague=LEAGUES.find(l=>l.tier===offerTier)||LEAGUES[0];
-    const offerClub=E.pick(CLUBS[offerTier]||CLUBS[3]);
-    if(offerClub===G.club.name) continue;
+    const pool=[...(CLUBS[offerTier]||CLUBS[3])].filter(c=>c!==G.club.name&&!usedClubs.has(c));
+    if(!pool.length)continue;
+    const offerClub=E.pick(pool);usedClubs.add(offerClub);
     const salary=Math.round(offerLeague.salary*(0.85+Math.random()*.45));
-    G.pendingTransferOffers.push({
-      id:`tl_${Date.now()}_${i}`,fromClub:offerClub,tier:offerTier,league:offerLeague.name,
-      salary,contractYears:E.rand(2,4),expires:G.season.dayOfSeason+45,saved:false,
-    });
+    G.pendingTransferOffers.push({id:`tl_${Date.now()}_${i}`,fromClub:offerClub,tier:offerTier,league:offerLeague.name,salary,contractYears:E.rand(2,4),expires:G.season.dayOfSeason+45,saved:false});
   }
   addLog('📋','Transfer Listed','On the market. Enquiries flooding in.',G.season.dayOfSeason);
-  closeModal();
-  showToast(`📋 Transfer listed — ${n} clubs interested!`,'');
-  UI.updateTransferBadge();
-  App.renderDashboard();
+  closeModal();showToast(`📋 Transfer listed — ${n} clubs interested!`,'');
+  UI.updateTransferBadge();App.renderDashboard();
 }
 
 // ── Season End ────────────────────────────────────────────────
-function getSortedTable(){
-  return[...G.league.teams].sort((a,b)=>b.pts-a.pts||(b.gd-a.gd)||(b.gf-a.gf));
-}
-
-function getLeaguePosition(){
-  return getSortedTable().findIndex(t=>t.isPlayer)+1;
-}
+function getSortedTable(){return[...G.league.teams].sort((a,b)=>b.pts-a.pts||(b.gd-a.gd)||(b.gf-a.gf));}
+function getLeaguePosition(){return getSortedTable().findIndex(t=>t.isPlayer)+1;}
 
 function endSeason(){
-  G.season.finished=true;
-  G.careerStats.seasons++;
-
-  // End-of-season development
+  G.season.finished=true;G.careerStats.seasons++;
   const ageBoost=Math.max(0.2,1.4-(G.player.age-17)*.1);
   const keys=['pace','shooting','passing','dribbling','defending','physical'];
   const w=POS_WEIGHTS[G.player.position]||{};
@@ -677,95 +717,56 @@ function endSeason(){
   });
   G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
   G.careerStats.bestOVR=Math.max(G.careerStats.bestOVR,G.player.overall);
-
   const st=G.seasonStats;
   G.careerLog.push({icon:'🏁',title:`Season ${G.season.number} Complete`,detail:`${st.apps} apps · ${st.goals}G ${st.assists}A · Avg ${st.avgRating||'—'}`,date:'End of Season'});
-
   checkLeagueResult();
-
-  // Contract wind down
   G.club.contractYears--;
-  if(G.club.contractYears<=0 && !G.club.isFreeAgent){
+  if(G.club.contractYears<=0&&!G.club.isFreeAgent){
     const pos=getLeaguePosition();
-    const poorPerf=pos>Math.floor(G.league.teams.length*.6) && G.player.overall<58;
-    if(poorPerf){
-      G.club.isFreeAgent=true;G.club.name='Free Agent';
-      G.careerLog.push({icon:'🔓',title:'Released',detail:'Club did not renew your contract.',date:'End of Season'});
-    } else {
-      G.club.contractYears=E.rand(2,4);
-      G.weeklySalary=Math.round(G.weeklySalary*E.rand(105,122)/100);
-      G.careerLog.push({icon:'✍️',title:'Contract Auto-Renewed',detail:`£${G.weeklySalary.toLocaleString()}/wk · ${G.club.contractYears} years`,date:'End of Season'});
-    }
+    const poorPerf=pos>Math.floor(G.league.teams.length*.6)&&G.player.overall<58;
+    if(poorPerf){G.club.isFreeAgent=true;G.club.name='Free Agent';G.careerLog.push({icon:'🔓',title:'Released',detail:'Club did not renew your contract.',date:'End of Season'});}
+    else{G.club.contractYears=E.rand(2,4);G.weeklySalary=Math.round(G.weeklySalary*E.rand(105,122)/100);G.careerLog.push({icon:'✍️',title:'Contract Auto-Renewed',detail:`£${G.weeklySalary.toLocaleString()}/wk · ${G.club.contractYears} years`,date:'End of Season'});}
   }
-
   G.player.age++;
-
-  // Age cap check — at 34+, prompt for career extension or retirement
+  // Reset WC tracker for new season year
+  G.wcYear=null;
   if(G.player.age>=34){
-    // Autosave first
     try{const s={...G,achievements:[...G.achievements],triggeredEvents:[...G.triggeredEvents]};localStorage.setItem('propath3_save',JSON.stringify(s));}catch(e){}
-    UI.showAgeCapModal();
-    return;
+    UI.showAgeCapModal();return;
   }
-
-  // Autosave at end of every season
   try{const s={...G,achievements:[...G.achievements],triggeredEvents:[...G.triggeredEvents]};localStorage.setItem('propath3_save',JSON.stringify(s));showToast('💾 Season autosaved','');}catch(e){}
-
   UI.showSeasonEndModal();
 }
 
 function checkLeagueResult(){
   const sorted=getSortedTable();
   const myPos=sorted.findIndex(t=>t.isPlayer)+1;
-  const league=LEAGUES.find(l=>l.tier===G.club.tier);
-  if(!league)return;
-
-  if(G.club.tier>1 && myPos<=league.promoted){
-    G.club.tier--;
-    const nl=LEAGUES.find(l=>l.tier===G.club.tier)||LEAGUES[0];
-    G.club.leagueId=nl.id;G.weeklySalary=Math.round(G.weeklySalary*1.22);
-    G.careerLog.push({icon:'🚀',title:'Promoted!',detail:`Moving up to ${nl.name}`,date:'End of Season'});
-    G.careerStats.highestLeague=Math.min(G.careerStats.highestLeague,G.club.tier);
-  } else if(league.relegated && G.club.tier<5 && myPos>sorted.length-league.relegated){
-    G.club.tier++;
-    const nl=LEAGUES.find(l=>l.tier===G.club.tier)||LEAGUES[0];
-    G.club.leagueId=nl.id;G.weeklySalary=Math.round(G.weeklySalary*.85);
-    G.careerLog.push({icon:'📉',title:'Relegated',detail:`Dropped to ${nl.name}`,date:'End of Season'});
-  }
-
-  if(myPos===1){
-    G.careerStats.trophies++;
-    G.careerLog.push({icon:'🏆',title:`${G.league.name} Champions!`,detail:'Finished top of the league!',date:'End of Season'});
-  }
+  const league=LEAGUES.find(l=>l.tier===G.club.tier);if(!league)return;
+  if(G.club.tier>1&&myPos<=league.promoted){G.club.tier--;const nl=LEAGUES.find(l=>l.tier===G.club.tier)||LEAGUES[0];G.club.leagueId=nl.id;G.weeklySalary=Math.round(G.weeklySalary*1.22);G.careerLog.push({icon:'🚀',title:'Promoted!',detail:`Moving up to ${nl.name}`,date:'End of Season'});G.careerStats.highestLeague=Math.min(G.careerStats.highestLeague,G.club.tier);}
+  else if(league.relegated&&G.club.tier<5&&myPos>sorted.length-league.relegated){G.club.tier++;const nl=LEAGUES.find(l=>l.tier===G.club.tier)||LEAGUES[0];G.club.leagueId=nl.id;G.weeklySalary=Math.round(G.weeklySalary*.85);G.careerLog.push({icon:'📉',title:'Relegated',detail:`Dropped to ${nl.name}`,date:'End of Season'});}
+  if(myPos===1){G.careerStats.trophies++;G.careerLog.push({icon:'🏆',title:`${G.league.name} Champions!`,detail:'Finished top of the league!',date:'End of Season'});}
 }
 
 function startNewSeason(){
-  closeModal();
-  if(G.club.isFreeAgent){UI.showFreeAgentOffers();return;}
-
+  closeModal();if(G.club.isFreeAgent){UI.showFreeAgentOffers();return;}
   G.season={number:G.season.number+1,startYear:G.season.startYear+1,dayOfSeason:0,totalDays:365,finished:false};
   G.seasonStats={goals:0,assists:0,apps:0,motm:0,yellows:0,reds:0,wins:0,draws:0,losses:0,ratingSum:0,ratingCount:0,avgRating:0,cleanSheets:0};
-  G.dayLog=[];G.matchHistory=[];G.form=[];G.injuryDaysLeft=0;G.forcedStarter=0;G.pendingEvent=null;
-
+  G.dayLog=[];G.matchHistory=[];G.form=[];G.injuryDaysLeft=0;G.forcedStarter=0;G.pendingEvent=null;G.wcYear=null;
   const league=LEAGUES.find(l=>l.tier===G.club.tier)||LEAGUES[0];
   G.league={name:league.name,tier:G.club.tier,teams:E.generateLeague(G.club.tier,G.club.name),matchdays:E.scheduleLeague(G.club.tier,365),nextMatchIdx:0};
   G.cups=E.scheduleCups(G.club.tier);
-  G.manager.teamAvgOVR=E.rand(58,76);
-
+  const newTierAvg={1:[76,90],2:[68,80],3:[60,73],4:[54,67],5:[48,62]}[G.club.tier]||[60,78];
+  G.manager.teamAvgOVR=E.rand(newTierAvg[0],newTierAvg[1]);
   G.careerLog.push({icon:'🔄',title:`Season ${G.season.number} Begins`,detail:`${G.club.name} · ${league.name}`,date:'Pre-Season'});
-  App.renderDashboard();
-  showToast('🆕 New season started!','');
+  App.renderDashboard();showToast('🆕 New season started!','');
 }
 
 // ── Investments ───────────────────────────────────────────────
 function purchaseInvestment(invId){
-  const inv=INVESTMENTS.find(i=>i.id===invId);
-  if(!inv)return;
+  const inv=INVESTMENTS.find(i=>i.id===invId);if(!inv)return;
   if(G.investments.includes(invId)){showToast('Already owned!','warn');return;}
   if(G.wallet<inv.cost){showToast('Not enough money!','err');return;}
-  G.wallet-=inv.cost;
-  G.investments.push(invId);
-  G.passiveIncome+=inv.weeklyReturn;
+  G.wallet-=inv.cost;G.investments.push(invId);G.passiveIncome+=inv.weeklyReturn;
   addLog(inv.icon,`Purchased: ${inv.name}`,`+£${inv.weeklyReturn.toLocaleString()}/wk passive income`,G.season.dayOfSeason);
   showToast(`${inv.icon} ${inv.name} purchased! +£${inv.weeklyReturn.toLocaleString()}/wk`,'');
   App.renderDashboard();
@@ -773,8 +774,7 @@ function purchaseInvestment(invId){
 
 // ── Free Agent ────────────────────────────────────────────────
 function generateFreeAgentOffers(){
-  const offers=[];
-  const n=E.rand(3,5);
+  const offers=[];const n=E.rand(3,5);
   for(let i=0;i<n;i++){
     let tier=E.clamp(G.club.tier+E.rand(-1,1),1,5);
     const league=LEAGUES.find(l=>l.tier===tier)||LEAGUES[0];
@@ -783,105 +783,87 @@ function generateFreeAgentOffers(){
   }
   return offers;
 }
-
 function signFreeAgent(offerId){
-  const offer=G._faOffers?.find(o=>o.id===offerId);
-  if(!offer)return;
-  G.club={name:offer.fromClub,tier:offer.tier,leagueId:LEAGUES.find(l=>l.tier===offer.tier)?.id||'L4',contractYears:offer.contractYears,isFreeAgent:false};
-  G.weeklySalary=offer.salary;
+  const offer=G._faOffers?.find(o=>o.id===offerId);if(!offer)return;
+  G.club={name:offer.fromClub,tier:offer.tier,leagueId:LEAGUES.find(l=>l.tier===offer.tier)?.id||'L4',contractYears:offer.contractYears,isFreeAgent:false,contractSignedDay:G.season.dayOfSeason};
+  G.weeklySalary=offer.salary;G.manager={name:E.pick(MANAGER_NAMES),title:E.pick(MANAGER_TITLES),teamAvgOVR:E.rand(58,78)};
   G.careerStats.highestLeague=Math.min(G.careerStats.highestLeague,offer.tier);
   G.careerLog.push({icon:'✍️',title:`Signed for ${offer.fromClub}`,detail:`${offer.league} · £${offer.salary.toLocaleString()}/wk`,date:E.getDayLabel(G.season.dayOfSeason)});
-  closeModal();
-  startNewSeason();
+  closeModal();startNewSeason();
 }
 
 // ── Save / Load / HOF ─────────────────────────────────────────
 function saveGame(){
-  try{
-    const s={...G,achievements:[...G.achievements],triggeredEvents:[...G.triggeredEvents]};
-    localStorage.setItem('propath3_save',JSON.stringify(s));
-    showToast('💾 Game saved!','');
-  }catch(e){showToast('❌ Save failed','err');}
+  try{const s={...G,achievements:[...G.achievements],triggeredEvents:[...G.triggeredEvents]};localStorage.setItem('propath3_save',JSON.stringify(s));showToast('💾 Game saved!','');}
+  catch(e){showToast('❌ Save failed','err');}
 }
 
 function loadGame(){
   try{
-    const raw=localStorage.getItem('propath3_save');
-    if(!raw){showToast('No save found.','warn');return;}
-    const s=JSON.parse(raw);
-    s.achievements=new Set(s.achievements||[]);
-    s.triggeredEvents=new Set(s.triggeredEvents||[]);
-    G=s;
-    App.goTo(5);
-    showToast('✅ Career loaded!','');
+    const raw=localStorage.getItem('propath3_save');if(!raw){showToast('No save found.','warn');return;}
+    const s=JSON.parse(raw);s.achievements=new Set(s.achievements||[]);s.triggeredEvents=new Set(s.triggeredEvents||[]);G=s;
+    App.goTo(5);showToast('✅ Career loaded!','');
+    if(G.season?.finished)setTimeout(()=>{if(G.player.age>=34)UI.showAgeCapModal();else UI.showSeasonEndModal();},400);
   }catch(e){showToast('❌ Load failed','err');}
 }
 
-function getHOF(){try{return JSON.parse(localStorage.getItem('propath3_hof')||'[]');}catch{return[];}}
+function getHOF(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('propath3_hof')||'[]');
+    // Backfill ids for old entries that don't have one
+    let dirty=false;
+    raw.forEach((e,i)=>{if(!e.id){e.id=`hof_legacy_${i}_${Date.now()}`;dirty=true;}});
+    if(dirty)localStorage.setItem('propath3_hof',JSON.stringify(raw));
+    return raw;
+  }catch{return[];}
+}
 
 function saveToHOF(){
   const hof=getHOF();
+  const nat=NATIONS.find(n=>n.name===G.player.nation)||{flag:'🌍'};
   hof.push({
-    name:`${G.player.firstName} ${G.player.lastName}`,
+    id:`hof_${Date.now()}`,
+    name:`${G.player.firstName} ${G.player.lastName}`,flag:nat.flag,
     nation:G.player.nation,position:G.player.position,age:G.player.age,
-    goals:G.careerStats.goals,assists:G.careerStats.assists,
-    apps:G.careerStats.apps,trophies:G.careerStats.trophies,
-    seasons:G.careerStats.seasons,bestOVR:G.careerStats.bestOVR,
-    investments:G.investments.length,
+    goals:G.careerStats.goals,assists:G.careerStats.assists,apps:G.careerStats.apps,
+    trophies:G.careerStats.trophies,seasons:G.careerStats.seasons,bestOVR:G.careerStats.bestOVR,
+    investments:G.investments.length,intlCaps:G.careerStats.intlCaps||0,
     highestLeague:LEAGUES.find(l=>l.tier===G.careerStats.highestLeague)?.name||'—',
     date:new Date().getFullYear(),
   });
   localStorage.setItem('propath3_hof',JSON.stringify(hof.slice(-20)));
 }
 
+function deleteHOFEntry(id){
+  const hof=getHOF().filter(e=>e.id!==id);
+  localStorage.setItem('propath3_hof',JSON.stringify(hof));
+}
+
 // ── Career Extension (Age Cap) ────────────────────────────────
-// Base cap is 34. Each extension costs more. Max 6 extensions (retire at 40).
 const EXTENSION_COSTS=[500000,900000,1500000,2500000,4000000,6000000];
 const EXTENSION_LABELS=['34→35','35→36','36→37','37→38','38→39','39→40'];
-
-function getExtensionIndex(){
-  // How many extensions have been paid so far = (age - 34) if age > 34
-  return Math.max(0,G.player.age-34);
-}
+function getExtensionIndex(){return Math.max(0,G.player.age-34);}
 
 function extendCareer(){
   const idx=getExtensionIndex();
-  if(idx>=EXTENSION_COSTS.length){
-    showToast('Career cannot be extended further.','warn');
-    return;
-  }
+  if(idx>=EXTENSION_COSTS.length){showToast('Career cannot be extended further.','warn');return;}
   const cost=EXTENSION_COSTS[idx];
-  if(G.wallet<cost){
-    showToast(`Need £${cost.toLocaleString()} — not enough funds!`,'err');
-    return;
-  }
-  G.wallet-=cost;
-  G.player.ageCapExtensions=(G.player.ageCapExtensions||0)+1;
+  if(G.wallet<cost){showToast(`Need £${cost.toLocaleString()} — not enough funds!`,'err');return;}
+  G.wallet-=cost;G.player.ageCapExtensions=(G.player.ageCapExtensions||0)+1;
   addLog('⏳','Career Extension Paid',`£${cost.toLocaleString()} — playing on for another season.`,G.season.dayOfSeason);
   showToast(`⏳ Career extended! Playing on at age ${G.player.age}.`,'');
-  // Autosave
   try{const s={...G,achievements:[...G.achievements],triggeredEvents:[...G.triggeredEvents]};localStorage.setItem('propath3_save',JSON.stringify(s));}catch(e){}
   UI.showSeasonEndModal();
 }
-function resolveBet(outcome, amount){
-  // outcome: 'win','draw','lose'  amount: number
+
+function resolveBet(outcome,amount){
   if(amount<=0||amount>G.wallet){showToast('Invalid bet amount','err');return;}
   const odds={win:2.1,draw:3.4,lose:4.0};
   const opp=G.league.teams.find(t=>!t.isPlayer)||{ovr:65};
-  const teamOVR=G.manager.teamAvgOVR;
-  const r=E.simulateAIMatch({ovr:teamOVR},{ovr:opp.ovr});
+  const r=E.simulateAIMatch({ovr:G.manager.teamAvgOVR},{ovr:opp.ovr});
   const actualResult=r.hg>r.ag?'win':r.hg<r.ag?'lose':'draw';
   const won=outcome===actualResult;
-  if(won){
-    const payout=Math.floor(amount*odds[outcome]);
-    G.wallet+=payout-amount;
-    addLog('🎰','Bet Won!',`Backed a ${outcome} · Result: ${r.hg}-${r.ag} · +£${(payout-amount).toLocaleString()}`,G.season.dayOfSeason);
-    showToast(`🎰 Won! +£${(payout-amount).toLocaleString()}!`,'');
-  } else {
-    G.wallet-=amount;
-    addLog('🎰','Bet Lost',`Backed a ${outcome} · Actual result: ${r.hg}-${r.ag} · -£${amount.toLocaleString()}`,G.season.dayOfSeason);
-    showToast(`😬 Lost the bet. -£${amount.toLocaleString()}`,'err');
-  }
-  closeModal();
-  App.renderDashboard();
+  if(won){const payout=Math.floor(amount*odds[outcome]);G.wallet+=payout-amount;addLog('🎰','Bet Won!',`Backed a ${outcome} · +£${(payout-amount).toLocaleString()}`,G.season.dayOfSeason);showToast(`🎰 Won! +£${(payout-amount).toLocaleString()}!`,'');}
+  else{G.wallet-=amount;addLog('🎰','Bet Lost',`Backed a ${outcome} · -£${amount.toLocaleString()}`,G.season.dayOfSeason);showToast(`😬 Lost the bet. -£${amount.toLocaleString()}`,'err');}
+  closeModal();App.renderDashboard();
 }
