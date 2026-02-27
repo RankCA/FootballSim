@@ -1,3 +1,6 @@
-all casino games fixed but scratchcard, doesnt load anymore
+all casino games fixed but scratchcard;  doesnt load anymore.
 "Request new contract" cooldown broken. Doesn't count down properly. Skipping one month may only decrease the counter by 5 days.
-League resets upon transferring
+League resets upon transferring.
+Money display at the top doesn't update reliably. Have to refresh page to update counter.
+"Cleared 10 days early" event should happen only when the player has an injury longer than 10 days.
+Next Fixture display always off by 2 days.
