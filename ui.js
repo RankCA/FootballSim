@@ -462,7 +462,7 @@ const UI = {
           {icon:'🎰',name:'Slots',desc:'Match 3 — up to 10×',fn:'UI.playSlots()'},
           {icon:'🃏',name:'Blackjack',desc:'Beat 21 — 2×',fn:'UI.playBlackjack()'},
           {icon:'🎡',name:'Roulette',desc:'Red/Black/Number',fn:'UI.playRoulette()'},
-          {icon:'🎫',name:'Scratchcard',desc:'£500 — instant win',fn:'UI.playScratchcard()'},
+          {icon:'🎫',name:'Scratchcard',desc:'£10000 — instant win',fn:'UI.playScratchcard()'},
         ].map(g=>`<button class="casino-game-btn" onclick="${g.fn}">
           <div style="font-size:28px;margin-bottom:6px;">${g.icon}</div>
           <div style="font-weight:700;font-size:12px;margin-bottom:3px;">${g.name}</div>
