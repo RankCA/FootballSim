@@ -1,6 +1,12 @@
 all casino games fixed but scratchcard;  doesnt load anymore.
-"Request new contract" cooldown broken. Doesn't count down properly. Skipping one month may only decrease the counter by 5 days.
-League resets upon transferring.
+
+League STILL resets upon transferring. Might be better to save the state of the league each day progression.
+
 Money display at the top doesn't update reliably. Have to refresh page to update counter.
-"Cleared 10 days early" event should happen only when the player has an injury longer than 10 days.
-Next Fixture display always off by 2 days.
+
+Some events should only show when certain conditions are met e.g. "Cleared 10 days early" event should happen only when the player has an injury longer than 10 days 
+or "starting player out, you get 3 week guaranteed in the XI" should not appear if you are already in the starting XI (if your at a certain standing with the manager)
+
+Next Fixture display still always off by 2 days.
+
+Call this new version, Version 8, and increase by 1 for each subsequent set of changes to the game
