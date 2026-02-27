@@ -1,0 +1,3 @@
+all casino games fixed but scratchcard, doesnt load anymore
+"Request new contract" cooldown broken. Doesn't count down properly. Skipping one month may only decrease the counter by 5 days.
+League resets upon transferring
