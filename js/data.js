@@ -130,10 +130,17 @@ const OFFSEASON_EVENTS=[
   {icon:'⚽',title:'Pre-Season Friendly',detail:'Shaking off the rust — 75 minutes in the legs.'},
   {icon:'🏊',title:'Altitude Camp',detail:'Week in the mountains — lung capacity through the roof.'},
   {icon:'🎯',title:'Technical Bootcamp',detail:'Individual sessions with a specialist coach.'},
+  {icon:'💆',title:'Recovery Retreat', detail: 'Yoga and hydrotherapy to reset the body after a long season.' },
+  {icon:'📸',title:'Media Day', detail: 'Kit launches and official headshots for the new campaign.' },
+  {icon:'🧘',title:'Mental Performance', detail: 'Sports psychology sessions to sharpen focus and goal-setting.' },
+  {icon:'🥗',title:'Nutrition Overhaul', detail: 'Personalised meal planning with the club dietician.' },
+  {icon:'🤝',title:'Fan Engagement', detail: 'Open training session and signing autographs for the locals.' },
+  {icon:'🛡️',title:'Injury Prevention', detail: 'Mobility work and screenings to bulletproof the joints.' },
+  {icon:'📉',title:'Data Review', detail: 'Analysing last season’s metrics to find marginal gains.' },
 ];
 
 const INVESTMENTS=[
-  {id:'inv_media',icon:'🎙️',name:'Punditry Contract',desc:'Weekly football punditry on a streaming channel.',cost:12000,weeklyReturn:350,category:'media'},
+  {id:'inv_media',icon:'🎙️',name:'Punditry Contract',desc:'Weekly football punditry on a streaming channel.',cost:12000,weeklyReturn:400,category:'media'},
   {id:'inv_cafe',icon:'☕',name:'Football Club Café',desc:'A café inside the training ground complex.',cost:22000,weeklyReturn:600,category:'food'},
   {id:'inv_stocks',icon:'📈',name:'Premier League Club Shares',desc:'A small portfolio of listed football club shares.',cost:30000,weeklyReturn:900,category:'finance'},
   {id:'inv_pitch',icon:'⚽',name:'Local 5-a-Side Pitch',desc:'Community pitch generating steady rental income.',cost:45000,weeklyReturn:1200,category:'property'},
@@ -153,7 +160,7 @@ const MANAGER_NAMES=[
   'Carlos Montes','Barry Colquhoun','Femi Adeyemi','Viktor Novak','Piotr Zawadzki',
   'Diego Ruiz','Kenji Watanabe','Alain Bertrand','Rory Gallagher','Tomasz Krawczyk',
   'Bogdan Ionescu','Sven Holmberg','Christophe Renard','Eamonn Walsh','Mikael Borg',
-  'Andrei Popescu','Josef Blaha','Luca Romano','Callum Fraser','Idris Mensah',
+  'Andrei Popescu','Josef Blaha','Luca Romano','Callum Fraser','Idris Mensah','Benjamin Netanyahu','Pep Guardiola',
 ];
 const MANAGER_TITLES=['Head Coach','First Team Manager','Director of Football & Head Coach'];
 
