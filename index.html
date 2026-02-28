@@ -14,7 +14,7 @@
 
 <!-- ════ SCREEN 0: SPLASH ════ -->
 <div class="screen active" id="screen-0">
-  <div class="logo"><div class="logo-wordmark">ProPath</div><div class="logo-sub">Football Career Simulator · v3</div></div>
+  <div class="logo"><div class="logo-wordmark">ProPath</div><div class="logo-sub">Football Career Simulator · v8</div></div>
   <div class="card" style="max-width:520px;margin:0 auto;">
     <div class="start-hero">
       <div class="pitch-ring"><span class="ball-icon">⚽</span></div>
@@ -75,6 +75,7 @@
     <button class="tab-btn" data-tab="manager" onclick="App.switchTab('manager')">🧑‍💼 Manager</button>
     <button class="tab-btn" data-tab="training" onclick="App.switchTab('training')">💪 Train & Invest</button>
     <button class="tab-btn" data-tab="career" onclick="App.switchTab('career')">📋 Career</button>
+    <button class="tab-btn" data-tab="casino" onclick="App.switchTab('casino')">🎰 Casino</button>
   </div>
 
   <!-- ── OVERVIEW TAB ── -->
@@ -91,10 +92,10 @@
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <button class="btn btn-primary" id="advanceBtn" onclick="App.advanceDay()">▶ Next Day</button>
               <button class="btn btn-secondary" id="skipWeekBtn" onclick="App.skipWeek()">⏩ Week</button>
-              <button class="btn btn-ghost" id="skipMonthBtn" onclick="App.skipMonth()">⏭ Month</button>
             </div>
           </div>
-          <div id="lastDayEvents" class="day-events">
+          <div id="nextFixturePanel" style="margin-bottom:12px;"></div>
+  <div id="lastDayEvents" class="day-events">
             <div class="empty-state">⚽<br><br>Click <strong>Next Day</strong> to start your career.</div>
           </div>
         </div>
@@ -202,6 +203,8 @@
       <div id="careerMatchHistory" class="log-history" style="max-height:320px;"></div>
     </div>
   </div>
+
+  <div class="tab-pane" id="tab-casino"><div id="casinoContent" style="padding:4px 0;"></div></div>
 
 </div><!-- /screen-5 -->
 
