@@ -263,7 +263,7 @@ function runMatchSim(homeName,awayName,oppOVR,teamOVR,selection,isCup,day){
   if(!myGoals&&!myAssists&&!motm&&isStart)detail+=myRating>=68?'Solid performance.':'Tough afternoon — room to improve.';
   G.matchHistory.push({date:E.getDayLabel(day||0),home:homeName,away:awayName,hg,ag,result,rating:Math.round(myRating),goals:myGoals,assists:myAssists,motm,yellow,red,isCup:!!isCup,selection});
   if((motm||myGoals>=2||(G.agentUpgraded&&myRating>=75))&&!G.club.isFreeAgent)maybeGenerateTransferOffer(day||0);
-  return{type:'match',icon:'⚽',title:`${homeName} ${hg}–${ag} ${awayName}`,detail:detail.trim(),result,hg,ag,myGoals,myAssists,myRating:Math.round(myRating),motm,yellow,red,selection};
+  return{type:'match',icon:'⚽',title:`${homeName} ${hg}–${ag} ${awayName}`,detail:detail.trim(),result,hg,ag,myGoals,myAssists,myRating:Math.round(myRating),motm,yellow,red,selection,homeTeam:homeName,awayTeam:awayName};
 }
 
 function updateLeagueTable(myClub,oppName,hg,ag,myClubIsHome){

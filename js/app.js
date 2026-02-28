@@ -71,15 +71,35 @@ const App = {
   // FIX: simulateDay does NOT increment dayOfSeason — app.js does it here after
   advanceDay(){
     if(!G.season||G.season.finished)return;
+
+    // Detect if today is a match day (for sim) — check BEFORE simulateDay strips it
+    const today=G.season.dayOfSeason;
+    const isLeagueMatchDay=G.league.matchdays.includes(today)&&!G.club.isFreeAgent;
+    const isCupMatchDay=Object.values(G.cups||{}).some(c=>!c.eliminated&&c.matchDays?.includes(today));
+    const couldBeMatch=(isLeagueMatchDay||isCupMatchDay)&&typeof MatchSim!=='undefined';
+
     const result=simulateDay();
     G.dayLog.push({date:E.getDayLabel(G.season.dayOfSeason),events:result.events});
-    const evEl=document.getElementById('lastDayEvents');
-    if(evEl)evEl.innerHTML=result.events.map(e=>UI.renderDayEvent(e)).join('');
     G.season.dayOfSeason++;
-    if(G.season.dayOfSeason>=G.season.totalDays){endSeason();}
-    else{
+    if(G.season.dayOfSeason>=G.season.totalDays){endSeason();return;}
+
+    // Find the match event — must have homeTeam (set by runMatchSim) and player was on pitch
+    const matchEv=result.events.find(e=>e.type==='match'&&e.result&&e.homeTeam&&e.selection!=='out');
+
+    if(couldBeMatch&&matchEv){
+      // Show match sim, then reveal result on close
+      MatchSim.show(matchEv.homeTeam,matchEv.awayTeam||'Opposition',matchEv,()=>{
+        const evEl=document.getElementById('lastDayEvents');
+        if(evEl)evEl.innerHTML=result.events.map(e=>UI.renderDayEvent(e)).join('');
+        App.renderDashboard();
+        if(result.blockingEvent){UI.showBlockingEvent(result.blockingEvent);}
+      });
+    } else {
+      // Training day, bench/out, or sim unavailable — show immediately
+      const evEl=document.getElementById('lastDayEvents');
+      if(evEl)evEl.innerHTML=result.events.map(e=>UI.renderDayEvent(e)).join('');
       App.renderDashboard();
-      if(result.blockingEvent){UI.showBlockingEvent(result.blockingEvent);return;}
+      if(result.blockingEvent){UI.showBlockingEvent(result.blockingEvent);}
     }
   },
 
