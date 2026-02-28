@@ -1,0 +1,45 @@
+Add Patch Notes
+Remove Skipping Months. Too buggy and allows players to go too quickly.
+Add more random events, since they are very repetitive at the moment
+Make it so some events can’t repeat
+Add more countries
+MANAGER MODE
+Add an avatar creator (doesn’t have to be good)
+Make mini displays of matches
+Remove GK
+Improve events logic; Some events shouldn't be displayed if the player is past a certain OVR. For example, No "Emergency Loan Offer" if you're the best player at the club.
+Events shouldn't tell you what the outcome of the different choices are until after you choose them.
+Add something akin to the "Needs" meters from BitLife, where you need to balance your happiness, fitness, health and stress.
+Morale system: a hidden 1-100 morale bar affected by events, which influences match selection and performance
+Rivalry system : specific opponent clubs that generate unique pre-match events
+Youth academy product: occasionally a player you mentored makes the first team, earning you a loyalty bonus
+Physio progress bar during ACL rehab showing month-by-month recovery with mini-decisions
+Transfer negotiation mini-game: counter-offer, hold out, or accept, with agents involved
+Club loyalty badges: earn perks for staying 3+ seasons (guaranteed starts, testimonial)
+Press conference system: monthly questions that affect team morale or personal brand
+Weather system: pitch conditions that modify match outcomes (frozen pitch = lower scoring, wet = more errors)
+Contract release clause: let the player set one, which then triggers offers when OVR crosses a threshold
+Add club logos
+Actual transfer windows. No transfers mid season
+
+Add other foreign Leagues: 
+LaLiga - Spain
+Serie A - Italy
+Ligue 1 - France
+Bundesliga - Germany
+Eriedivisie - Netherlands
+Ekstraklasa - Poland
+Premiership - Scotland
+MLS - USA
+Super League - Turkey
+Super League - Greece
+
+Add International Tournaments:
+World Cup
+Club World Cup
+Champions League
+Europa League
+Conference League
+Euros
+AFCON
+Olympics
