@@ -185,6 +185,7 @@ const RANDOM_EVENTS=[
 
   {id:'evt_boot_deal',icon:'👟',title:'Boot Sponsorship Offer',subtitle:'Your first commercial deal',
    body:"A sports equipment brand has been watching your performances. They've sent your agent a sponsorship proposal — wear their boots for two seasons and they'll pay a signing fee.",
+   condition:()=>!G.triggeredEvents.has('evt_boot_deal'),
    chance:0.004,minDay:60,type:'financial',rarity:'uncommon',unique:true,
    choices:[{label:'✍️ Sign the deal — £8,000',outcome:'£8,000 deposited. First commercial milestone.',fn:'bootDeal'},{label:'🤔 Hold out for a bigger offer',outcome:'You decline and wait.',fn:'declineEvent'}]},
 
@@ -226,9 +227,11 @@ const RANDOM_EVENTS=[
    choices:[{label:'💰 Invest £20,000',outcome:'40% chance of big returns. 60% chance it vanishes.',fn:'scamInvest'},{label:'🕵️ Report it to the club',outcome:'Club praises your integrity.',fn:'reportScam'},{label:'👋 Politely decline',outcome:'Something felt off.',fn:'declineEvent'}]},
 
   {id:'evt_loan_offer',icon:'🔄',title:'Emergency Loan Offer',subtitle:'A change of scenery',
-   body:"A club two divisions below have had a goalscoring crisis. They've approached about an emergency loan — you'd play every week but at a lower level.",
+   body:"A club two divisions below are in a goalscoring crisis and need a player of your quality immediately. Your parent club has agreed in principle. Two months of guaranteed first-team football — at a lower level, but every game counts.",
+   // Only available for top 2 tiers — loan goes 2 tiers down to tier 3 or 4 (still professional)
+   condition:()=>G.club.tier<=2&&!G.loanActive,
    chance:0.006,minDay:30,type:'career',rarity:'uncommon',
-   choices:[{label:'✈️ Accept the loan move',outcome:'Regular football for 2 months. Stats growth accelerated.',fn:'acceptLoan'},{label:'🏠 Stay and fight for your place',outcome:'You believe in your ability.',fn:'declineEvent'}]},
+   choices:[{label:'✈️ Accept the loan — regular football awaits',outcome:'Move to a club 2 tiers down for 60 days. Guaranteed starts. Growth accelerated.',fn:'acceptLoan'},{label:'🏠 Stay and fight for your place',outcome:'You believe in your ability to break through here.',fn:'declineEvent'}]},
 
   {id:'evt_family_news',icon:'👨‍👩‍👦',title:'News from Home',subtitle:'A reminder of what matters',
    body:"Your childhood football coach — the person who first spotted you — has been diagnosed with a serious illness. He's asked you to come visit.",
@@ -243,6 +246,7 @@ const RANDOM_EVENTS=[
   // ── NEW EVENTS ──────────────────────────────────────────────────────────────
   {id:'evt_wonder_goal_viral',icon:'🌠',title:'That Goal Is Going Viral',subtitle:'A moment of pure magic',
    body:"You scored an absolutely stunning goal last match — it's been viewed eighteen million times in twelve hours. Brands are calling your agent. Your face is on the front of every sports newspaper.",
+   condition:()=>G.seasonStats.goals>=1,
    chance:0.004,minDay:40,type:'media',rarity:'uncommon',
    choices:[{label:'📱 Embrace the attention',outcome:'+£5,000 from engagement deals.',fn:'embraceViral'},{label:'😄 Enjoy it quietly',outcome:'The football did the talking.',fn:'declineEvent'}]},
 
@@ -263,11 +267,13 @@ const RANDOM_EVENTS=[
 
   {id:'evt_record_transfer',icon:'💎',title:'Record Breaking Transfer Offer',subtitle:'A number that changes everything',
    body:"Your phone rings at 11pm. It's your agent. A massive club has submitted an extraordinary offer that triggers your release clause. Uprooting your life — but the money and opportunity are once-in-a-lifetime.",
+   condition:()=>!G.loanActive,
    chance:0.002,minDay:100,minOVR:78,type:'career',rarity:'very_rare',unique:true,
    choices:[{label:'✍️ Accept — sign for the big club',outcome:'Life-changing transfer. Salary ×3.',fn:'acceptRecordTransfer'},{label:'🏠 Stay loyal — turn it down',outcome:'The club are stunned and grateful. Loyalty bonus negotiated.',fn:'stayLoyal'}]},
 
   {id:'evt_career_ending_injury',icon:'🚑',title:'SERIOUS INJURY',subtitle:'The worst possible news',
    body:"In a 50-50 challenge, you hear a sickening crack. Extensive scans deliver the diagnosis: a complete ACL rupture. You're looking at 8 months minimum on the sidelines. Your career may never be the same.",
+   condition:()=>(G.injuryDaysLeft||0)===0&&(G.careerInjuryMonthsLeft||0)===0&&!G.loanActive,
    chance:0.0007,minDay:20,type:'fitness',rarity:'very_rare',unique:true,
    choices:[{label:'🏥 Begin rehabilitation immediately',outcome:'8-month recovery begins.',fn:'careerEndingInjury'},{label:'💔 Retire due to injury',outcome:'The hardest decision any footballer can face.',fn:'retireInjury'}]},
 
@@ -354,6 +360,7 @@ const RANDOM_EVENTS=[
 
   {id:'evt_hat_trick_bonus',icon:'⚽',title:'Club Hat-Trick Bonus',subtitle:'The chairman is delighted',
    body:"After your stunning hat-trick last weekend, the chairman has personally authorised a performance bonus above and beyond your contract.",
+   condition:()=>G.seasonStats.goals>=3,
    chance:0.005,minDay:60,type:'financial',rarity:'uncommon',unique:false,
    choices:[{label:'💰 Accept the bonus',outcome:'+£12,000 exceptional performance bonus.',fn:'hatTrickBonus'}]},
 
