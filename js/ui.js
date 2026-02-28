@@ -83,28 +83,91 @@ const UI = {
   },
 
   renderLeagueTable(){
-    const sorted=getSortedTable();
-    const league=LEAGUES.find(l=>l.tier===G.club.tier)||LEAGUES[0];
-    document.getElementById('leagueName').textContent=G.league.name;
-    const qual=[];
-    if(league.promoted>0)qual.push(`Top ${league.promoted}: Promoted`);
-    if(G.club.tier===1)qual.push('Top 4: Europa Elite');
-    if(league.relegated)qual.push(`Bottom ${league.relegated}: Relegated`);
-    document.getElementById('leagueQualInfo').textContent=qual.join(' · ');
-    const el=document.getElementById('leagueTable');
-    el.querySelector('thead').innerHTML=`<tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Form</th></tr>`;
-    el.querySelector('tbody').innerHTML=sorted.map((t,i)=>{
-      const pos=i+1;
-      const pc=pos<=league.promoted?'top':pos>sorted.length-(league.relegated||0)?'rel':'mid';
-      return`<tr class="${t.isPlayer?'my-team':''}">
-        <td class="pos-col ${pc}">${pos}</td>
-        <td class="team-col" style="min-width:130px;font-size:12px;">${t.name}${t.isPlayer?' ⭐':''}</td>
-        <td>${t.played}</td><td>${t.won}</td><td>${t.drawn}</td><td>${t.lost}</td>
-        <td>${t.gf}</td><td>${t.ga}</td><td>${t.gd>0?'+':''}${t.gd}</td>
-        <td style="font-weight:700;color:var(--text);">${t.pts}</td>
-        <td><div class="form-dots">${UI.formDots(t.form)}</div></td>
-      </tr>`;
-    }).join('');
+    // Populate dropdown with all available views
+    const sel=document.getElementById('leagueViewSelect');
+    if(sel){
+      const curVal=sel.value||'league';
+      let opts=`<option value="league">🏆 ${G.league.name}</option>`;
+      Object.entries(G.cups||{}).forEach(([id,cup])=>{
+        const cd=CUPS.find(c=>c.id===id);if(!cd)return;
+        opts+=`<option value="cup_${id}">${cd.icon} ${cd.name}</option>`;
+      });
+      // Only rebuild if options changed (avoid losing selection)
+      if(sel.innerHTML!==opts)sel.innerHTML=opts;
+      if(!sel.value||sel.value==='')sel.value='league';
+    }
+    const view=(sel?.value)||'league';
+    UI.switchLeagueView(view);
+  },
+
+  switchLeagueView(view){
+    const tableWrap=document.getElementById('leagueTableWrapper');
+    const cupWrap=document.getElementById('cupBracketView');
+    const qualEl=document.getElementById('leagueQualInfo');
+    const nameEl=document.getElementById('leagueName');
+    if(!tableWrap||!cupWrap)return;
+
+    if(view==='league'||!view.startsWith('cup_')){
+      // Show league table
+      tableWrap.style.display='';cupWrap.style.display='none';
+      if(nameEl)nameEl.textContent=G.league.name;
+      const league=LEAGUES.find(l=>l.tier===G.league.tier)||LEAGUES[0];
+      const qual=[];
+      if(league.promoted>0)qual.push(`Top ${league.promoted}: Promoted`);
+      if(G.league.tier===1)qual.push('Top 4: Europa Elite');
+      if(league.relegated)qual.push(`Bottom ${league.relegated}: Relegated`);
+      if(qualEl)qualEl.textContent=qual.join(' · ');
+      const sorted=getSortedTable();
+      const el=document.getElementById('leagueTable');
+      el.querySelector('thead').innerHTML=`<tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Form</th></tr>`;
+      el.querySelector('tbody').innerHTML=sorted.map((t,i)=>{
+        const pos=i+1;
+        const pc=pos<=league.promoted?'top':pos>sorted.length-(league.relegated||0)?'rel':'mid';
+        return`<tr class="${t.isPlayer?'my-team':''}">
+          <td class="pos-col ${pc}">${pos}</td>
+          <td class="team-col" style="min-width:130px;font-size:12px;">${t.name}${t.isPlayer?' ⭐':''}</td>
+          <td>${t.played}</td><td>${t.won}</td><td>${t.drawn}</td><td>${t.lost}</td>
+          <td>${t.gf}</td><td>${t.ga}</td><td>${t.gd>0?'+':''}${t.gd}</td>
+          <td style="font-weight:700;color:var(--text);">${t.pts}</td>
+          <td><div class="form-dots">${UI.formDots(t.form)}</div></td>
+        </tr>`;
+      }).join('');
+    } else {
+      // Show cup bracket
+      tableWrap.style.display='none';cupWrap.style.display='';
+      const cupId=view.replace('cup_','');
+      const cup=G.cups?.[cupId];
+      const cd=CUPS.find(c=>c.id===cupId);
+      if(!cup||!cd){cupWrap.innerHTML='<div class="empty-state">Cup data unavailable.</div>';return;}
+      if(nameEl)nameEl.textContent=cd.name;
+      if(qualEl)qualEl.textContent='';
+      const rounds=cd.rounds||[];
+      cupWrap.innerHTML=`
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px;">${cd.desc}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+            ${rounds.map((r,i)=>{
+              let color='var(--text-muted)';let icon='⬜';
+              if(cup.winner){color='var(--gold)';icon='🏆';}
+              else if(cup.eliminated&&i<cup.stage){color='var(--accent)';icon='✅';}
+              else if(cup.eliminated&&i===cup.stage){color='var(--red)';icon='❌';}
+              else if(i===cup.stage&&!cup.eliminated&&!cup.winner){color='var(--accent)';icon='▶';}
+              return`<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:72px;">
+                <div style="font-size:16px;">${icon}</div>
+                <div style="font-size:10px;color:${color};font-family:'DM Mono',monospace;text-align:center;letter-spacing:.5px;">${r}</div>
+              </div>${i<rounds.length-1?`<div style="flex:1;height:2px;background:var(--border);align-self:center;margin-top:-18px;min-width:10px;"></div>`:''}`;
+            }).join('')}
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:14px;">
+            ${cup.winner
+              ?`<div style="text-align:center;"><div style="font-size:32px;margin-bottom:6px;">🏆</div><div style="font-weight:700;color:var(--gold);">WINNER — ${cd.name}</div><div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Your greatest moment in this competition.</div></div>`
+              :cup.eliminated
+                ?`<div style="text-align:center;"><div style="font-size:32px;margin-bottom:6px;">💔</div><div style="font-weight:700;color:var(--red);">Eliminated</div><div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Exit stage: ${rounds[Math.max(0,cup.stage-1)]||'Early'}</div></div>`
+                :`<div style="text-align:center;"><div style="font-size:28px;margin-bottom:6px;">▶</div><div style="font-weight:700;color:var(--accent);">Still In — Next: ${rounds[cup.stage]||'Final'}</div><div style="font-size:12px;color:var(--text-dim);margin-top:4px;">Next match: ${E.getDayLabel((cup.matchDays||[]).find(d=>d>G.season.dayOfSeason)||0)}</div></div>`
+            }
+          </div>
+        </div>`;
+    }
   },
 
   formDots(arr){
@@ -192,13 +255,13 @@ const UI = {
   renderNextFixture(){
     const el=document.getElementById('nextFixturePanel');if(!el)return;
     const day=G.season.dayOfSeason;
-    // Find next league matchday — >= day means today's match shows as TODAY
-    const nextLeagueDay=(G.league.matchdays||[]).find(d=>d>=day)??null;
+    // matchdays are removed when played, so find(d > day) is always the true next fixture
+    const nextLeagueDay=(G.league.matchdays||[]).find(d=>d>day)??null;
     let nextCupDay=null,nextCupLabel='';
     Object.entries(G.cups||{}).forEach(([id,cup])=>{
       if(cup.eliminated||cup.winner)return;
       const cd=CUPS.find(c=>c.id===id);
-      const nd=(cup.matchDays||[]).find(d=>d>=day)??null;
+      const nd=(cup.matchDays||[]).find(d=>d>day)??null;
       if(nd!==null&&(nextCupDay===null||nd<nextCupDay)){nextCupDay=nd;nextCupLabel=`${cd?.name||'Cup'} — ${cd?.rounds?.[cup.stage]||'Final'}`;}
     });
     const fixtures=[];
@@ -209,8 +272,9 @@ const UI = {
     if(!next){el.innerHTML=`<div class="fixture-empty">No upcoming fixtures</div>`;return;}
     const daysAway=Math.max(0,next.day-day);
     const opponents=G.league.teams.filter(t=>!t.isPlayer);
-    const alreadyPlayed=(G.league.matchdays||[]).filter(d=>d<day).length;
-    const opp=opponents.length>0?opponents[alreadyPlayed%Math.max(1,opponents.length)]?.name||'Opponents':'Opponents';
+    // nextMatchIdx tracks how many matches played; use it to find next opponent
+    const idx=(G.league.nextMatchIdx||0)%Math.max(1,opponents.length);
+    const opp=opponents[idx]?.name||'Opponents';
     const urgency=daysAway<=3?'style="color:var(--accent);font-weight:700;"':daysAway<=7?'style="color:var(--gold);"':'';
     const daysLabel=daysAway===0?'<span style="color:var(--accent);font-weight:700;">TODAY</span>':daysAway===1?'<span style="color:var(--gold);font-weight:700;">Tomorrow</span>':`<span ${urgency}>In ${daysAway} days</span>`;
     el.innerHTML=`<div class="fixture-pill">
@@ -222,10 +286,48 @@ const UI = {
   },
 
   renderManagerTab(){
+    const el=document.getElementById('managerContent');if(!el)return;
+
+    // Loan mode — completely different UI
+    if(G.loanActive&&G.loanOriginalClub){
+      const orig=G.loanOriginalClub;
+      el.innerHTML=`
+        <div class="card" style="margin-bottom:14px;border-color:rgba(74,158,255,.3);background:rgba(74,158,255,.04);">
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+            <div style="font-size:36px;">✈️</div>
+            <div>
+              <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--blue);letter-spacing:1px;">ON LOAN</div>
+              <div style="font-size:13px;color:var(--text-dim);">${G.club.name} · ${G.loanDaysLeft} day${G.loanDaysLeft!==1?'s':''} remaining</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);line-height:1.7;margin-bottom:14px;">
+            Your parent club is <strong style="color:var(--text);">${orig.name}</strong>. You're on an emergency loan and must return when it expires. Transfer requests and contract negotiations are suspended during this period.
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:14px;">
+            <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:2px;color:var(--blue);margin-bottom:8px;">LOAN MANAGER</div>
+            <div style="font-size:13px;font-weight:700;">${G.manager.name}</div>
+            <div style="font-size:11px;color:var(--text-dim);">${G.club.name} · ${LEAGUES.find(l=>l.tier===G.club.tier)?.name||'—'}</div>
+          </div>
+        </div>
+        <div class="manager-opts">
+          <div class="manager-opt" onclick="requestLoanCallback()">
+            <div class="mo-icon">📞</div>
+            <div class="mo-title">Request Loan Recall</div>
+            <div class="mo-desc">Ask your parent club to bring you back early. No guarantee.</div>
+          </div>
+          <div class="manager-opt" onclick="UI.showContractStatus()">
+            <div class="mo-icon">📄</div>
+            <div class="mo-title">View Contract Status</div>
+            <div class="mo-desc">See your parent club contract details.</div>
+          </div>
+        </div>`;
+      return;
+    }
+
     const op=E.managerOpinion(G.player.overall,G.manager.teamAvgOVR);
     const moodColors={favourable:'var(--accent)',good:'var(--accent)',neutral:'var(--gold)',sceptical:'var(--accent2)',poor:'var(--red)'};
     const moodEmoji={favourable:'😄',good:'🙂',neutral:'😐',sceptical:'🤨',poor:'😠'};
-    document.getElementById('managerContent').innerHTML=`
+    el.innerHTML=`
       <div class="manager-card">
         <div class="manager-avatar">🧑‍💼</div>
         <div class="manager-info">
@@ -426,7 +528,28 @@ const UI = {
       </div>`,true);
   },
 
-  // ── Bet Modal ─────────────────────────────────────────────
+  // ── Cup Win Celebration ───────────────────────────────────────
+  showCupCelebration(cupDef){
+    const confetti=['🎊','🎉','🏆','⭐','🥇','✨','🎆','🎇'];
+    const rand=arr=>arr[Math.floor(Math.random()*arr.length)];
+    showModal(`
+      <div style="text-align:center;padding:8px 0 24px;">
+        <div style="font-size:64px;animation:bounceIn .6s cubic-bezier(.22,1,.36,1) both;margin-bottom:12px;">${cupDef.icon}</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:3px;color:var(--gold);margin-bottom:6px;text-shadow:0 0 30px rgba(245,200,66,.5);">
+          CHAMPIONS!
+        </div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px;color:var(--text);">${cupDef.name}</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">You've lifted the trophy. This moment is forever.</div>
+        <div style="font-size:40px;letter-spacing:6px;margin-bottom:24px;">${Array.from({length:7},()=>rand(confetti)).join('')}</div>
+        <div style="background:linear-gradient(135deg,rgba(245,200,66,.1),rgba(0,229,160,.08));border:1px solid rgba(245,200,66,.3);border-radius:12px;padding:16px;margin-bottom:20px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:2px;color:var(--gold);margin-bottom:8px;">SEASON HONOURS</div>
+          <div style="font-size:13px;color:var(--text-dim);">🏆 Trophies this career: <strong style="color:var(--gold);">${G.careerStats.trophies}</strong></div>
+        </div>
+        <button class="btn btn-gold" style="width:100%;padding:14px;font-size:15px;" onclick="closeModal();App.renderDashboard();">
+          🎊 Celebrate with the Squad
+        </button>
+      </div>`,true);
+  },
   showBetModal(){
     const opp=G.league.teams.find(t=>!t.isPlayer)||{name:'Opponents'};
     showModal(`
@@ -452,27 +575,29 @@ const UI = {
   renderCasinoTab(){
     const el=document.getElementById('casinoContent');if(!el)return;
     el.innerHTML=`
-      <div style="text-align:center;padding:0 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px;">
-        <div style="font-size:36px;margin-bottom:8px;">🎰</div>
-        <div style="font-size:18px;font-weight:700;letter-spacing:.5px;margin-bottom:4px;">The ProPath Casino</div>
-        <div style="font-size:12px;color:var(--text-dim);">For entertainment only · Gamble responsibly</div>
-        <div style="margin-top:8px;font-size:15px;color:var(--gold);font-weight:700;">${UI.fmtMoney(G.wallet)} available</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-        ${[
-          {icon:'🪙',name:'Coin Flip',desc:'Call it — 1.9×',fn:'UI.playCoinFlip()'},
-          {icon:'🎲',name:'Dice Roll',desc:'High/Low — 1.8×',fn:'UI.playDice()'},
-          {icon:'🎰',name:'Slots',desc:'Match 3 — up to 10×',fn:'UI.playSlots()'},
-          {icon:'🃏',name:'Blackjack',desc:'Beat 21 — 2×',fn:'UI.playBlackjack()'},
-          {icon:'🎡',name:'Roulette',desc:'Red/Black/Number',fn:'UI.playRoulette()'},
-          {icon:'🎫',name:'Scratchcard',desc:'£500 — instant win',fn:'UI.playScratchcard()'},
-        ].map(g=>`<button class="casino-game-btn" onclick="${g.fn}">
-          <div style="font-size:28px;margin-bottom:6px;">${g.icon}</div>
-          <div style="font-weight:700;font-size:12px;margin-bottom:3px;">${g.name}</div>
-          <div style="font-size:10px;color:var(--text-dim);">${g.desc}</div>
-        </button>`).join('')}
-      </div>
-      <p style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:14px;">⚠️ No real money. If gambling affects you in real life, please seek support.</p>`;
+      <div class="card">
+        <div style="text-align:center;padding:0 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px;">
+          <div style="font-size:36px;margin-bottom:8px;">🎰</div>
+          <div style="font-size:18px;font-weight:700;letter-spacing:.5px;margin-bottom:4px;">The ProPath Casino</div>
+          <div style="font-size:12px;color:var(--text-dim);">For entertainment only · Gamble responsibly</div>
+          <div style="margin-top:8px;font-size:15px;color:var(--gold);font-weight:700;">${UI.fmtMoney(G.wallet)} available</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          ${[
+            {icon:'🪙',name:'Coin Flip',desc:'Call it — 1.9×',fn:'UI.playCoinFlip()'},
+            {icon:'🎲',name:'Dice Roll',desc:'High/Low — 1.8×',fn:'UI.playDice()'},
+            {icon:'🎰',name:'Slots',desc:'Match 3 — up to 10×',fn:'UI.playSlots()'},
+            {icon:'🃏',name:'Blackjack',desc:'Beat 21 — 2×',fn:'UI.playBlackjack()'},
+            {icon:'🎡',name:'Roulette',desc:'Red/Black/Number',fn:'UI.playRoulette()'},
+            {icon:'🎫',name:'Scratchcard',desc:'£500 — instant win',fn:'UI.playScratchcard()'},
+          ].map(g=>`<button class="casino-game-btn" onclick="${g.fn}">
+            <div style="font-size:28px;margin-bottom:6px;">${g.icon}</div>
+            <div style="font-weight:700;font-size:12px;margin-bottom:3px;">${g.name}</div>
+            <div style="font-size:10px;color:var(--text-dim);">${g.desc}</div>
+          </button>`).join('')}
+        </div>
+        <p style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:14px;">⚠️ No real money. If gambling affects you in real life, please seek support.</p>
+      </div>`;
   },
 
   // Store the pending game so stake modals can reference it without serializing callbacks

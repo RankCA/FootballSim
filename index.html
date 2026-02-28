@@ -14,7 +14,7 @@
 
 <!-- ════ SCREEN 0: SPLASH ════ -->
 <div class="screen active" id="screen-0">
-  <div class="logo"><div class="logo-wordmark">ProPath</div><div class="logo-sub">Football Career Simulator · v8</div></div>
+  <div class="logo"><div class="logo-wordmark">ProPath</div><div class="logo-sub">Football Career Simulator · v9</div></div>
   <div class="card" style="max-width:520px;margin:0 auto;">
     <div class="start-hero">
       <div class="pitch-ring"><span class="ball-icon">⚽</span></div>
@@ -130,13 +130,19 @@
   <!-- ── LEAGUE TAB ── -->
   <div class="tab-pane" id="tab-league">
     <div class="card">
-      <div class="flex-between" style="margin-bottom:12px;">
-        <div><div class="section-label">League Table</div><h3 id="leagueName">—</h3></div>
-        <div id="leagueQualInfo" style="font-size:11px;color:var(--text-dim);text-align:right;max-width:200px;"></div>
+      <div class="flex-between" style="margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+        <div><div class="section-label">Standings</div><h3 id="leagueName">—</h3></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <select id="leagueViewSelect" onchange="UI.switchLeagueView(this.value)" style="background:var(--surface2);border:1.5px solid var(--border-bright);color:var(--text);border-radius:8px;padding:8px 12px;font-family:'DM Sans',sans-serif;font-size:12px;cursor:pointer;">
+            <option value="league">🏆 My League</option>
+          </select>
+          <div id="leagueQualInfo" style="font-size:11px;color:var(--text-dim);text-align:right;max-width:220px;"></div>
+        </div>
       </div>
-      <div style="overflow-x:auto;">
+      <div id="leagueTableWrapper" style="overflow-x:auto;">
         <table class="league-table" id="leagueTable"><thead></thead><tbody></tbody></table>
       </div>
+      <div id="cupBracketView" style="display:none;"></div>
     </div>
   </div>
 

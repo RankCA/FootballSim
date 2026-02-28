@@ -26,7 +26,7 @@ function initGame(draft){
     cups:E.scheduleCups(startClub.tier),
     form:[],injuryDaysLeft:0,careerInjuryMonthsLeft:0,forcedStarter:0,
     agentUpgraded:false,triggeredEvents:new Set(),pendingEvent:null,
-    loanActive:false,loanDaysLeft:0,wcYear:null,
+    loanActive:false,loanDaysLeft:0,loanOriginalClub:null,wcYear:null,
   };
   G.careerLog.push({icon:'⚽',title:'Career Begins',detail:`${draft.firstName} ${draft.lastName} signs for ${startClub.clubName}`,date:'Pre-Season'});
 }
@@ -45,6 +45,27 @@ function simulateDay(){
   const day=G.season.dayOfSeason;
   const phase=E.getSeasonPhase(day);
   const events=[];
+
+  // Loan countdown and auto-return
+  if(G.loanActive&&G.loanDaysLeft>0){
+    G.loanDaysLeft--;
+    if(G.loanDaysLeft===0){
+      // Return to parent club
+      const orig=G.loanOriginalClub;
+      if(orig){
+        G.club={name:orig.name,tier:orig.tier,leagueId:orig.leagueId,contractYears:orig.contractYears,isFreeAgent:false,contractSignedDay:orig.contractSignedDay};
+        G.manager={...orig.manager};
+        G.league={name:orig.league.name,tier:orig.league.tier,teams:orig.league.teams,matchdays:orig.league.matchdays,nextMatchIdx:orig.league.nextMatchIdx};
+        G.loanOriginalClub=null;
+      }
+      G.loanActive=false;G.forcedStarter=0;
+      // Loan growth bonus: 3 random stats improve
+      for(let i=0;i<3;i++){const g=simulateGrowth();if(g)events.push(g);}
+      addLog('🏠','Loan Recalled',`Returned to ${G.club.name}. Growth accelerated by the experience.`,day);
+      showToast(`🏠 Loan over — back at ${G.club.name}!`,'');
+      events.push({type:'career',icon:'🏠',title:'Loan Recalled',detail:`Returned to ${G.club.name}. 3 stats improved from the experience.`});
+    }
+  }
 
   // Long-term ACL rehab
   if(G.careerInjuryMonthsLeft>0){
@@ -103,7 +124,11 @@ function simulateDay(){
   const isLeagueDay=G.league.matchdays.includes(day)&&!G.club.isFreeAgent;
   const cupsToday=Object.entries(G.cups||{}).filter(([id,c])=>!c.eliminated&&c.matchDays?.includes(day));
 
-  if(isLeagueDay)events.push(...simulateLeagueMatch(day));
+  if(isLeagueDay){
+    // Remove this matchday so renderNextFixture won't show it as upcoming after it runs
+    G.league.matchdays=G.league.matchdays.filter(d=>d!==day);
+    events.push(...simulateLeagueMatch(day));
+  }
   else if(cupsToday.length>0)cupsToday.forEach(([id,cup])=>events.push(...simulateCupMatch(id,cup,day)));
   else if(phase==='season'){
     if(E.chance(0.06))events.push({type:'training',icon:'🎽',title:'Reserve Match',detail:'Extra minutes in the reserve fixture.'});
@@ -152,10 +177,41 @@ function simulateCupMatch(cupId,cup,day){
   const oppName=E.pick(CLUBS[oppTier]||CLUBS[3]);
   const selection=E.selectPlayer(G.player.overall,G.manager.teamAvgOVR);
   const res=runMatchSim(G.club.name,oppName,oppOVR,G.manager.teamAvgOVR,selection,true,day);
-  res.title=`${cupDef.icon} ${cupDef.name} (${stageLabel}): ${res.title}`;
-  const win=res.result==='W';
-  if(win){cup.stage++;if(cup.stage>=cupDef.rounds.length){cup.winner=true;cup.eliminated=true;G.careerStats.trophies++;G.careerLog.push({icon:'🏆',title:`${cupDef.name} Winner!`,detail:'Lifted the trophy!',date:E.getDayLabel(day)});showToast(`🏆 ${cupDef.name} Winner!`,'');}}
-  else cup.eliminated=true;
+
+  // Cups can't end in draws — go to extra time then penalties
+  let finalResult=res.result;
+  let etNote='';
+  if(res.result==='D'){
+    // Extra time: 50/50 weighted slightly by skill
+    const skillAdv=(G.manager.teamAvgOVR-oppOVR)/100;
+    if(E.chance(0.5+skillAdv)){
+      finalResult='W';etNote=' (AET)';
+      res.hg++;
+    } else {
+      // Penalties: 55% chance player's team wins
+      const penWin=E.chance(0.55);
+      finalResult=penWin?'W':'L';
+      etNote=' (Pens)';
+      if(penWin)res.hg++;else res.ag++;
+    }
+    res.result=finalResult;
+    res.detail+=' Match went to '+( etNote.includes('Pens')?'a penalty shootout':'extra time')+'.';
+  }
+
+  res.title=`${cupDef.icon} ${cupDef.name} (${stageLabel}): ${G.club.name} ${res.hg}–${res.ag} ${oppName}${etNote}`;
+  const win=finalResult==='W';
+  if(win){
+    cup.stage++;
+    if(cup.stage>=cupDef.rounds.length){
+      cup.winner=true;cup.eliminated=true;G.careerStats.trophies++;
+      G.careerLog.push({icon:'🏆',title:`${cupDef.name} Winner!`,detail:'Lifted the trophy!',date:E.getDayLabel(day)});
+      showToast(`🏆 ${cupDef.name} Winner!`,'');
+      // Celebration blocking modal
+      setTimeout(()=>UI.showCupCelebration(cupDef),200);
+    }
+  } else {
+    cup.eliminated=true;
+  }
   G.cups[cupId]=cup;
   return[res];
 }
@@ -318,10 +374,36 @@ function resolveEvent(fnName){
     },
     reportScam:()=>{addLog('🕵️','Reported Suspicious Contact','Club praised your integrity.',day);showToast('✅ Smart call — integrity intact','');},
     acceptLoan:()=>{
-      G.loanActive=true;G.loanDaysLeft=60;G.forcedStarter=60;
-      addLog('🔄','Emergency Loan Move','60 days of guaranteed football. Growth accelerated.',day);
-      for(let i=0;i<3;i++){const g=simulateGrowth();if(g)G.careerLog.push({icon:'📈',title:g.title,detail:g.detail,date:E.getDayLabel(day)});}
-      showToast('✈️ Loan activated!','');
+      // Only available if tier 1 or 2 (Championship/Prem) — loan goes 2 tiers down
+      const loanTier=Math.min(5,G.club.tier+2);
+      const loanPool=[...(CLUBS[loanTier]||CLUBS[4])].filter(c=>c!==G.club.name);
+      const loanClub=E.pick(loanPool)||'Loan Club';
+      const loanLeague=LEAGUES.find(l=>l.tier===loanTier)||LEAGUES[3];
+      const loanAvgRange={1:[76,90],2:[68,80],3:[60,73],4:[54,67],5:[48,62]}[loanTier]||[54,67];
+      // Store full original club state
+      G.loanOriginalClub={
+        name:G.club.name,tier:G.club.tier,leagueId:G.club.leagueId,
+        contractYears:G.club.contractYears,contractSignedDay:G.club.contractSignedDay,
+        salary:G.weeklySalary,manager:{...G.manager},
+        league:{name:G.league.name,tier:G.league.tier,teams:[...G.league.teams],
+          matchdays:[...G.league.matchdays],nextMatchIdx:G.league.nextMatchIdx||0},
+      };
+      // Move to loan club
+      G.club={name:loanClub,tier:loanTier,leagueId:loanLeague.id,contractYears:G.club.contractYears,isFreeAgent:false,contractSignedDay:G.club.contractSignedDay,isOnLoan:true};
+      G.manager={name:E.pick(MANAGER_NAMES),title:'Loan Manager',teamAvgOVR:E.rand(loanAvgRange[0],loanAvgRange[1])};
+      G.loanActive=true;
+      G.loanDaysLeft=60;
+      G.forcedStarter=60;
+      // Schedule fresh matches at loan club from today
+      const day=G.season.dayOfSeason;
+      G.league={
+        name:loanLeague.name,tier:loanTier,
+        teams:E.generateLeague(loanTier,loanClub),
+        matchdays:E.scheduleLeague(loanTier,365).filter(d=>d>day),
+        nextMatchIdx:0,
+      };
+      addLog('🔄','Emergency Loan Move',`On loan at ${loanClub} (${loanLeague.name}) for 60 days.`,day);
+      showToast(`✈️ On loan at ${loanClub}!`,'');
     },
     goHome:()=>{addLog('🏠','Went Home','A day off to see your old coach.',day);showToast("❤️ The visit meant everything to him",'');},
     callHome:()=>{addLog('📞','Called Home','An hour-long call. He was proud.',day);showToast("📞 He's watching every game",'');},
@@ -654,6 +736,28 @@ function requestNewContract(){
   </div>`);
   // Mark a cooldown even for viewing the offer — prevents re-opening it 10 times
   G._contractOfferedDay=day;
+}
+
+function requestLoanCallback(){
+  const day=G.season.dayOfSeason;
+  if(!G.loanActive||!G.loanOriginalClub){showToast('Not currently on loan.','err');return;}
+  // 40% chance parent club agrees to recall
+  if(E.chance(0.4)){
+    const orig=G.loanOriginalClub;
+    G.club={name:orig.name,tier:orig.tier,leagueId:orig.leagueId,contractYears:orig.contractYears,isFreeAgent:false,contractSignedDay:orig.contractSignedDay};
+    G.manager={...orig.manager};
+    G.league={name:orig.league.name,tier:orig.league.tier,teams:orig.league.teams,matchdays:orig.league.matchdays,nextMatchIdx:orig.league.nextMatchIdx};
+    G.loanOriginalClub=null;
+    G.loanActive=false;G.loanDaysLeft=0;G.forcedStarter=0;
+    addLog('📞','Loan Recall Granted',`${G.club.name} called you back early.`,day);
+    showToast(`📞 Recalled! Back at ${G.club.name}`,'');
+    App.renderDashboard();
+  } else {
+    const daysLeft=G.loanDaysLeft;
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">📞</span><div class="event-modal-title">Request Denied</div><div class="event-modal-subtitle">"Finish the loan. We need you battle-hardened." — ${G.loanOriginalClub.manager.name}</div></div>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px;">${daysLeft} day${daysLeft!==1?'s':''} remain on the loan. Keep performing and they'll have no choice but to bring you back.</p>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px;" onclick="closeModal()">👍 Understood</button>`);
+  }
 }
 
 function dismissContractOffer(){
