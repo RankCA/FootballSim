@@ -68,34 +68,69 @@ const App = {
     if(tab==='casino')UI.renderCasinoTab();
   },
 
-  // FIX: simulateDay does NOT increment dayOfSeason — app.js does it here after
   advanceDay(){
     if(!G.season||G.season.finished)return;
+    const day=G.season.dayOfSeason;
 
-    // Detect if today is a match day (for sim) — check BEFORE simulateDay strips it
-    const today=G.season.dayOfSeason;
-    const isLeagueMatchDay=G.league.matchdays.includes(today)&&!G.club.isFreeAgent;
-    const isCupMatchDay=Object.values(G.cups||{}).some(c=>!c.eliminated&&c.matchDays?.includes(today));
-    const couldBeMatch=(isLeagueMatchDay||isCupMatchDay)&&typeof MatchSim!=='undefined';
+    // ── Check if today is a match day with MatchSim available ──
+    const prep=(typeof prepareMatchForSim!=='undefined'&&typeof MatchSim!=='undefined')
+               ? prepareMatchForSim(day) : null;
 
-    const result=simulateDay();
-    G.dayLog.push({date:E.getDayLabel(G.season.dayOfSeason),events:result.events});
-    G.season.dayOfSeason++;
-    if(G.season.dayOfSeason>=G.season.totalDays){endSeason();return;}
+    if(prep && prep.selection!=='out'){
+      // ── SIM PATH: show visual sim, apply result on close ──────
+      // Advance the day counter now so the UI is correct after close
+      G.season.dayOfSeason++;
+      const simDay=day; // capture for closure
 
-    // Find the match event — must have homeTeam (set by runMatchSim) and player was on pitch
-    const matchEv=result.events.find(e=>e.type==='match'&&e.result&&e.homeTeam&&e.selection!=='out');
-
-    if(couldBeMatch&&matchEv){
-      // Show match sim, then reveal result on close
-      MatchSim.show(matchEv.homeTeam,matchEv.awayTeam||'Opposition',matchEv,()=>{
-        const evEl=document.getElementById('lastDayEvents');
-        if(evEl)evEl.innerHTML=result.events.map(e=>UI.renderDayEvent(e)).join('');
-        App.renderDashboard();
-        if(result.blockingEvent){UI.showBlockingEvent(result.blockingEvent);}
-      });
+      MatchSim.show(
+        prep.homeName, prep.awayName,
+        prep.homeOVR,  prep.awayOVR,
+        prep.homeFmt,  prep.awayFmt,
+        prep.homeCol,  prep.awayCol,
+        prep.isPlayerHome,
+        G.player.position,
+        (hg, ag) => {
+          // Called when user clicks "See Full Time Result →"
+          const matchEvents = applySimResult(hg, ag, prep, simDay);
+          const dateLabel = E.getDayLabel(simDay);
+          G.dayLog.push({date:dateLabel, events:matchEvents});
+          if(G.season.dayOfSeason>=G.season.totalDays){endSeason();return;}
+          const evEl=document.getElementById('lastDayEvents');
+          if(evEl)evEl.innerHTML=matchEvents.map(e=>UI.renderDayEvent(e)).join('');
+          App.renderDashboard();
+        }
+      );
     } else {
-      // Training day, bench/out, or sim unavailable — show immediately
+      // ── NON-SIM PATH: training day, bench, or no sim ──────────
+      // If it was a match day but player was 'out', handle that case:
+      // We need to consume the match from state.js's perspective
+      if(prep && prep.selection==='out'){
+        // Player not selected — run AI match silently
+        const mi=G.league.nextMatchIdx||0;
+        G.league.nextMatchIdx=mi+1;
+        if(G.forcedStarter>0)G.forcedStarter--;
+        G.league.matchdays=G.league.matchdays.filter(d=>d!==day);
+        const opponents=G.league.teams.filter(t=>!t.isPlayer);
+        const opp=opponents[mi%opponents.length];
+        const res=E.simulateAIMatch({ovr:prep.teamAvg},{ovr:opp.ovr});
+        updateLeagueTable(G.club.name,opp.name,res.hg,res.ag,true);
+        const notSelEv={type:'match',icon:'🪑',
+          title:`Not Selected — ${G.club.name} vs ${opp.name}`,
+          detail:`Left out. ${G.club.name} ${res.hg>res.ag?'won':'drew or lost'} ${res.hg}-${res.ag}.`,
+          selection:'out'};
+        G.dayLog.push({date:E.getDayLabel(day),events:[notSelEv]});
+        G.season.dayOfSeason++;
+        if(G.season.dayOfSeason>=G.season.totalDays){endSeason();return;}
+        const evEl=document.getElementById('lastDayEvents');
+        if(evEl)evEl.innerHTML=UI.renderDayEvent(notSelEv);
+        App.renderDashboard();
+        return;
+      }
+
+      const result=simulateDay();
+      G.dayLog.push({date:E.getDayLabel(day),events:result.events});
+      G.season.dayOfSeason++;
+      if(G.season.dayOfSeason>=G.season.totalDays){endSeason();return;}
       const evEl=document.getElementById('lastDayEvents');
       if(evEl)evEl.innerHTML=result.events.map(e=>UI.renderDayEvent(e)).join('');
       App.renderDashboard();

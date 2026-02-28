@@ -266,6 +266,157 @@ function runMatchSim(homeName,awayName,oppOVR,teamOVR,selection,isCup,day){
   return{type:'match',icon:'⚽',title:`${homeName} ${hg}–${ag} ${awayName}`,detail:detail.trim(),result,hg,ag,myGoals,myAssists,myRating:Math.round(myRating),motm,yellow,red,selection,homeTeam:homeName,awayTeam:awayName};
 }
 
+// ── Sim-first match pipeline ──────────────────────────────────
+// Step 1: gather everything MatchSim.show() needs WITHOUT committing stats.
+// Returns {homeTeam,awayTeam,homeOVR,awayOVR,homeFmt,awayFmt,
+//          homeCol,awayCol,isPlayerHome,selection,oppOVR,isCup,
+//          homeName,awayName,cupId,cupDef,stageLabel} or null if not a match.
+function prepareMatchForSim(day){
+  const isLeagueDay=G.league.matchdays.includes(day)&&!G.club.isFreeAgent;
+  const cupsToday=Object.entries(G.cups||{}).filter(([,c])=>!c.eliminated&&c.matchDays?.includes(day));
+  if(!isLeagueDay&&!cupsToday.length) return null;
+
+  // Selection
+  const teamAvg=G.manager.teamAvgOVR;
+  const selection=G.forcedStarter>0?'start':E.selectPlayer(G.player.overall,teamAvg);
+
+  let homeName,awayName,oppOVR,isCup=false,cupId=null,cupDef=null,stageLabel='';
+
+  if(isLeagueDay){
+    const mi=G.league.nextMatchIdx||0;
+    const opponents=G.league.teams.filter(t=>!t.isPlayer);
+    const opp=opponents[mi%opponents.length];
+    homeName=G.club.name; awayName=opp.name; oppOVR=opp.ovr;
+    isCup=false;
+  } else {
+    const [cid,cup]=cupsToday[0];
+    const cd=CUPS.find(c=>c.id===cid)||{name:'Cup',icon:'🏆',rounds:['Final']};
+    const oppTier=E.clamp(G.club.tier+E.rand(-1,1),1,5);
+    oppOVR=E.rand(58,80);
+    homeName=G.club.name;
+    awayName=E.pick(CLUBS[oppTier]||CLUBS[3]);
+    isCup=true; cupId=cid; cupDef=cd;
+    stageLabel=cd.rounds?.[cup.stage]||'Final';
+  }
+
+  const homeInfo=getClubInfo(homeName);
+  const awayInfo=getClubInfo(awayName);
+  const isPlayerHome=true; // always listed as home in our setup
+
+  return{
+    homeName,awayName,
+    homeOVR:teamAvg,awayOVR:oppOVR,
+    homeFmt:homeInfo.formation||'4-4-2',
+    awayFmt:awayInfo.formation||'4-4-2',
+    homeCol:homeInfo.primaryColor||'#4a9eff',
+    awayCol:awayInfo.primaryColor||'#ff4757',
+    isPlayerHome,selection,oppOVR,isCup,cupId,cupDef,stageLabel,
+    teamAvg,
+  };
+}
+
+// Step 2: commit the sim's live result into all G stats.
+// Call this AFTER MatchSim.close() returns hg/ag.
+function applySimResult(hg,ag,prep,day){
+  if(!prep) return [];
+  const{homeName,awayName,selection,oppOVR,isCup,cupId,cupDef,stageLabel,teamAvg}=prep;
+  const isAtt=['ST','CF','LW','RW','CAM'].includes(G.player.position);
+  const isMid=['CM','CDM'].includes(G.player.position);
+  const isHome=true;
+  const isStart=selection==='start';
+  const isSub=selection==='bench';
+  let myGoals=0,myAssists=0,myRating=E.rand(56,80);
+
+  if(isStart||isSub){
+    if(isAtt&&hg>0){myGoals=Math.min(E.rand(0,2),hg);if(hg>myGoals&&E.chance(.35))myAssists=1;}
+    else if(isMid&&hg>0){if(E.chance(.38))myAssists=1;if(E.chance(.14))myGoals=1;}
+    if(isSub){myGoals=Math.min(myGoals,1);myRating=E.clamp(myRating-6,48,82);}
+  }
+  const motm=isStart&&E.chance(.17);
+  const yellow=isStart&&E.chance(.09);
+  const red=!yellow&&isStart&&E.chance(.022);
+  if(motm)myRating=E.clamp(myRating+E.rand(8,16),68,99);
+  if(red)myRating=E.clamp(myRating-22,28,65);
+  const result=hg>ag?'W':hg<ag?'L':'D';
+
+  // Advance match indices
+  if(!isCup){
+    G.league.matchdays=G.league.matchdays.filter(d=>d!==day);
+    G.league.nextMatchIdx=(G.league.nextMatchIdx||0)+1;
+    if(G.forcedStarter>0)G.forcedStarter--;
+  }
+
+  if(isStart||isSub){
+    G.seasonStats.apps++;G.careerStats.apps++;
+    G.seasonStats.goals+=myGoals;G.careerStats.goals+=myGoals;
+    G.seasonStats.assists+=myAssists;G.careerStats.assists+=myAssists;
+    if(motm){G.seasonStats.motm++;G.careerStats.motm++;}
+    if(yellow)G.seasonStats.yellows++;
+    if(red){G.seasonStats.reds++;G.careerStats.reds++;}
+    if(result==='W')G.seasonStats.wins++;
+    else if(result==='D')G.seasonStats.draws++;
+    else G.seasonStats.losses++;
+    if(ag===0&&['GK','CB','LB','RB','CDM'].includes(G.player.position))G.seasonStats.cleanSheets++;
+    G.seasonStats.ratingSum+=Math.round(myRating);G.seasonStats.ratingCount++;
+    G.seasonStats.avgRating=Math.round(G.seasonStats.ratingSum/G.seasonStats.ratingCount);
+    G.form.push(Math.round(myRating));if(G.form.length>5)G.form.shift();
+  }
+  if(!isCup) updateLeagueTable(homeName,awayName,hg,ag,isHome);
+
+  // Match injury
+  const events=[];
+  if(E.chance(0.045)&&G.injuryDaysLeft===0&&G.careerInjuryMonthsLeft===0){
+    const days=E.rand(4,18);G.injuryDaysLeft=days;
+    const types=['Hamstring tweak','Ankle knock','Muscle strain','Bruised ribs','Hip flexor issue'];
+    const t=E.pick(types);
+    events.push({type:'injury',icon:'🤕',title:`Injury — ${days} days out`,detail:t});
+    G.careerLog.push({icon:'🤕',title:'Injury',detail:`${t} — ${days} days recovery`,date:E.getDayLabel(day)});
+  }
+
+  let detail=`${isStart?'Started':isSub?'Off the bench':'Not in squad'}. `;
+  if(myGoals)detail+=`${myGoals} goal${myGoals>1?'s':''} — "${E.pick(GOAL_FLAVOUR)}". `;
+  if(myAssists)detail+=`${myAssists} assist — "${E.pick(ASSIST_FLAVOUR)}". `;
+  if(motm)detail+=`🌟 Man of the Match — "${E.pick(MOTM_FLAVOUR)}". `;
+  if(yellow)detail+=`🟨 Booked for a late challenge. `;
+  if(red)detail+=`🟥 Straight red — you'll miss the next game. `;
+  if(!myGoals&&!myAssists&&!motm&&isStart)detail+=myRating>=68?'Solid performance.':'Tough afternoon — room to improve.';
+
+  G.matchHistory.push({date:E.getDayLabel(day||0),home:homeName,away:awayName,hg,ag,result,rating:Math.round(myRating),goals:myGoals,assists:myAssists,motm,yellow,red,isCup,selection});
+  if((motm||myGoals>=2||(G.agentUpgraded&&myRating>=75))&&!G.club.isFreeAgent)maybeGenerateTransferOffer(day||0);
+
+  // Cup result
+  let title=`${homeName} ${hg}–${ag} ${awayName}`;
+  if(isCup&&cupDef){
+    let etNote='';
+    let finalResult=result;
+    if(result==='D'){
+      const skillAdv=(teamAvg-oppOVR)/100;
+      if(E.chance(0.5+skillAdv)){finalResult='W';etNote=' (AET)';hg++;}
+      else{const pw=E.chance(0.55);finalResult=pw?'W':'L';etNote=' (Pens)';if(pw)hg++;else ag++;}
+      detail+=' Match went to '+(etNote.includes('Pens')?'a penalty shootout':'extra time')+'.';
+    }
+    title=`${cupDef.icon} ${cupDef.name} (${stageLabel}): ${homeName} ${hg}–${ag} ${awayName}${etNote}`;
+    const cup=G.cups[cupId];
+    if(cup){
+      if(finalResult==='W'){
+        cup.stage++;
+        if(cup.stage>=cupDef.rounds.length){
+          cup.winner=true;cup.eliminated=true;G.careerStats.trophies++;
+          G.careerLog.push({icon:'🏆',title:`${cupDef.name} Winner!`,detail:'Lifted the trophy!',date:E.getDayLabel(day)});
+          showToast(`🏆 ${cupDef.name} Winner!`,'');
+          setTimeout(()=>UI.showCupCelebration(cupDef),200);
+        }
+      } else { cup.eliminated=true; }
+      G.cups[cupId]=cup;
+    }
+  }
+
+  const ev={type:'match',icon:'⚽',title,detail:detail.trim(),result,hg,ag,myGoals,myAssists,myRating:Math.round(myRating),motm,yellow,red,selection,homeTeam:homeName,awayTeam:awayName};
+  events.unshift(ev);
+  checkMilestones(events,day);
+  return events;
+}
+
 function updateLeagueTable(myClub,oppName,hg,ag,myClubIsHome){
   const hName=myClubIsHome?myClub:oppName;
   const aName=myClubIsHome?oppName:myClub;
