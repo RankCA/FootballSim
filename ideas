@@ -4,8 +4,7 @@ add more investment options.
 Make it so some events can’t repeat
 Add more countries
 MANAGER MODE
-Add an avatar creator (doesn’t have to be good)
-Morale system: a hidden 1-100 morale bar affected by events, which influences match selection and performance
+Add a rudimentary avatar creator
 Rivalry system : specific opponent clubs that generate unique pre-match events
 Youth academy product: occasionally a player you mentored makes the first team, earning you a loyalty bonus
 Physio progress bar during ACL rehab showing month-by-month recovery with mini-decisions
@@ -36,7 +35,3 @@ Conference League
 Euros
 AFCON
 Olympics
-
-
-give me a way of easily adding clubs' real badges/logo. Maybe a dedicated folder for each league's teams, and each picture follows a simple naming convention. All would be PNGs.
-Give me a list of the club names and how you'd want me to name the files for the clubs badges to display properly
