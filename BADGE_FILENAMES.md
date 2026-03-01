@@ -1,6 +1,6 @@
 # Badge Filenames — ProPath
 
-All files are **PNG**, placed in the folder shown. Just drop the file in — the game finds it automatically.
+All files are **PNG**, placed in the folder shown. Add the file to its respective league folder, ensuring it has the correct filename & the game will start using the badge automatically.
 
 ---
 
@@ -204,8 +204,8 @@ All files are **PNG**, placed in the folder shown. Just drop the file in — the
 ---
 
 ## Tips
-- Badges don't need to be exact size — they're rescaled to fit (20px in table, 20px in fixture panel, 20px in match HUD)
+- Badges don't need to be exact size. They're rescaled to fit (20px in table, 20px in fixture panel, 20px in match HUD)
 - Square PNGs work best (e.g. 64×64, 128×128, 512×512)
 - Transparent background recommended
-- If a file is missing, the emoji badge shows instead — no crash, no broken layout
+- If a file is missing, the emoji badge shows instead
 - You can add badges one club at a time; others will keep using emoji until you add theirs
