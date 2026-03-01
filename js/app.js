@@ -1,0 +1,407 @@
+// ════════════════════════════════════════════════════════════
+//  ProPath v4 — app.js
+// ════════════════════════════════════════════════════════════
+
+let draft={firstName:'',lastName:'',nickname:'',age:17,nation:null,position:null,foot:'Right',trait:null};
+let creationStep=1;
+
+const App = {
+  currentTab:'overview',
+
+  goTo(n){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById('screen-'+n)?.classList.add('active');
+    if(n===1){creationStep=1;draft={firstName:'',lastName:'',nickname:'',age:17,nation:null,position:null,foot:'Right',trait:null};renderCreationStep();}
+    if(n===5)App.renderDashboard();
+    if(n===6)UI.renderHOF();
+    window.scrollTo({top:0,behavior:'smooth'});
+  },
+
+  renderDashboard(){
+    const p=G.player,s=G.season,cl=G.club;
+    if(!p)return;
+    document.getElementById('dashGreeting').textContent=`Season ${s.number} · ${p.nickname||p.firstName} ${p.lastName}`;
+    document.getElementById('dashSubtitle').textContent=`${NATIONS.find(n=>n.name===p.nation)?.flag||''} ${p.nation} · ${p.position} · Age ${p.age}`;
+    document.getElementById('seasonBadge').textContent=`${s.startYear}/${String(s.startYear+1).slice(2)}`;
+    // Always update wallet display in every location it appears
+    const walletStr=`💰 ${UI.fmtMoney(G.wallet)}`;
+    const wChip=document.getElementById('walletChip');if(wChip)wChip.textContent=walletStr;
+    const wAmt=document.getElementById('walletAmount');if(wAmt)wAmt.textContent=UI.fmtMoney(G.wallet);
+    const wSal=document.getElementById('weeklySalaryLabel');if(wSal)wSal.textContent=`Weekly wages: £${G.weeklySalary.toLocaleString()}`;
+    document.getElementById('currentDayLabel').textContent=E.getDayLabel(s.dayOfSeason);
+    document.getElementById('freeAgentBanner').style.display=cl.isFreeAgent?'block':'none';
+
+    const fin=s.finished||cl.isFreeAgent;
+    const advBtn=document.getElementById('advanceBtn');
+    if(advBtn){advBtn.disabled=fin;advBtn.textContent=fin?'Season Over':'▶ Next Day';}
+
+    UI.renderPlayerCard();
+    UI.renderAttrs();
+    UI.renderProgress();
+    UI.renderStatPills();
+    UI.renderCareerLog();
+    UI.renderRecentLog();
+    UI.updateTransferBadge();
+    UI.renderNextFixture();
+
+    App.refreshTab(App.currentTab);
+  },
+
+  switchTab(tab){
+    App.currentTab=tab;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+    document.querySelector(`.tab-btn[data-tab="${tab}"]`)?.classList.add('active');
+    document.getElementById('tab-'+tab)?.classList.add('active');
+    App.refreshTab(tab);
+  },
+
+  refreshTab(tab){
+    if(tab==='league')UI.renderLeagueTable();
+    if(tab==='calendar')UI.renderCalendarTab();
+    if(tab==='training')UI.renderTrainingTab();
+    if(tab==='career')UI.renderCareerTab();
+    if(tab==='transfers')UI.renderTransfersTab();
+    if(tab==='manager')UI.renderManagerTab();
+    if(tab==='casino')UI.renderCasinoTab();
+  },
+
+  advanceDay(){
+    if(!G.season||G.season.finished)return;
+    const day=G.season.dayOfSeason;
+
+    // ── Check if today is a match day with MatchSim available ──
+    const prep=(typeof prepareMatchForSim!=='undefined'&&typeof MatchSim!=='undefined')
+               ? prepareMatchForSim(day) : null;
+
+    if(prep && prep.selection!=='out'){
+      // ── SIM PATH: show visual sim, apply result on close ──────
+      // Advance the day counter now so the UI is correct after close
+      G.season.dayOfSeason++;
+      const simDay=day; // capture for closure
+
+      MatchSim.show(
+        prep.homeName, prep.awayName,
+        prep.homeOVR,  prep.awayOVR,
+        prep.homeFmt,  prep.awayFmt,
+        prep.homeCol,  prep.awayCol,
+        prep.isPlayerHome,
+        G.player.position,
+        (hg, ag) => {
+          // Called when user clicks "See Full Time Result →"
+          const matchEvents = applySimResult(hg, ag, prep, simDay);
+          const dateLabel = E.getDayLabel(simDay);
+          G.dayLog.push({date:dateLabel, events:matchEvents});
+          if(G.season.dayOfSeason>=G.season.totalDays){endSeason();return;}
+          const evEl=document.getElementById('lastDayEvents');
+          if(evEl)evEl.innerHTML=matchEvents.map(e=>UI.renderDayEvent(e)).join('');
+          App.renderDashboard();
+        }
+      );
+    } else {
+      // ── NON-SIM PATH: training day, bench, or no sim ──────────
+      // If it was a match day but player was 'out', handle that case:
+      // We need to consume the match from state.js's perspective
+      if(prep && prep.selection==='out'){
+        // Player not selected — run AI match silently using fixture list
+        if(!G.league.fixtures||G.league.fixtures.length===0){
+          G.league.fixtures=_buildFixtureList(G.league.teams);
+        }
+        const mi=G.league.nextMatchIdx||0;
+        G.league.nextMatchIdx=mi+1;
+        if(G.forcedStarter>0)G.forcedStarter--;
+        G.league.matchdays=G.league.matchdays.filter(d=>d!==day);
+        const fix=G.league.fixtures?.[mi%G.league.fixtures.length];
+        const playerName=G.club.name;
+        const playerIsHome=fix?fix.home===playerName:true;
+        const oppName=fix?(playerIsHome?fix.away:fix.home):(G.league.teams.find(t=>!t.isPlayer)?.name||'Opponent');
+        const opp=G.league.teams.find(t=>t.name===oppName)||G.league.teams.find(t=>!t.isPlayer);
+        const homeT=playerIsHome?{ovr:prep.teamAvg}:{ovr:opp?.ovr||70};
+        const awayT=playerIsHome?{ovr:opp?.ovr||70}:{ovr:prep.teamAvg};
+        const res=E.simulateAIMatch(homeT,awayT);
+        const [hg,ag]=playerIsHome?[res.hg,res.ag]:[res.ag,res.hg];
+        updateLeagueTable(playerIsHome?playerName:oppName, playerIsHome?oppName:playerName, hg, ag, playerIsHome);
+        const notSelEv={type:'match',icon:'🪑',
+          title:`Not Selected — ${playerIsHome?playerName:oppName} vs ${playerIsHome?oppName:playerName}`,
+          detail:`Left out. Final score: ${hg}–${ag}.`,
+          selection:'out'};
+        G.dayLog.push({date:E.getDayLabel(day),events:[notSelEv]});
+        G.season.dayOfSeason++;
+        if(G.season.dayOfSeason>=G.season.totalDays){endSeason();return;}
+        const evEl=document.getElementById('lastDayEvents');
+        if(evEl)evEl.innerHTML=UI.renderDayEvent(notSelEv);
+        App.renderDashboard();
+        return;
+      }
+
+      const result=simulateDay();
+      G.dayLog.push({date:E.getDayLabel(day),events:result.events});
+      G.season.dayOfSeason++;
+      if(G.season.dayOfSeason>=G.season.totalDays){endSeason();return;}
+      const evEl=document.getElementById('lastDayEvents');
+      if(evEl)evEl.innerHTML=result.events.map(e=>UI.renderDayEvent(e)).join('');
+      App.renderDashboard();
+      if(result.blockingEvent){UI.showBlockingEvent(result.blockingEvent);}
+    }
+  },
+
+
+  resolveBlockingEvent(fnName){resolveEvent(fnName);},
+
+  buyTraining(key){
+    const cur=G.player.attrs[key];const cost=E.trainCost(cur);
+    if(G.wallet<cost){showToast('Not enough money!','err');return;}
+    if(cur>=99){showToast('Already maxed!','warn');return;}
+    G.wallet-=cost;G.player.attrs[key]=E.clamp(cur+1,0,99);G.player.overall=E.calcOVR(G.player.attrs,G.player.position);
+    UI.renderTrainingTab();UI.renderAttrs();UI.renderPlayerCard();
+    showToast(`💪 ${key} improved to ${G.player.attrs[key]}!`,'');
+  },
+
+  acceptTransfer(offerId){
+    showModal(`
+      <div class="event-modal-header"><span class="event-modal-emoji">✈️</span><div class="event-modal-title">Confirm Transfer</div><div class="event-modal-subtitle">All other pending offers will expire once you sign.</div></div>
+      <div class="event-choices">
+        <button class="event-choice gold" onclick="acceptTransferOffer('${offerId}')"><div class="ec-label" style="color:var(--text)">✍️ Sign and transfer</div><div class="ec-outcome" style="color:var(--text-dim)">A new chapter begins.</div></button>
+        <button class="event-choice" onclick="closeModal()"><div class="ec-label" style="color:var(--text)">↩ Think again</div><div class="ec-outcome" style="color:var(--text-dim)">Come back when ready.</div></button>
+      </div>`);
+  },
+
+  declineTransfer(offerId){declineTransferOffer(offerId);},
+  saveOffer(offerId){saveOfferForLater(offerId);},
+  saveGame(){saveGame();},
+
+  loadGame(){
+    try{
+      const raw=localStorage.getItem('propath3_save');
+      if(!raw){showToast('No save found.','warn');return;}
+      const s=JSON.parse(raw);
+      s.achievements=new Set(s.achievements||[]);s.triggeredEvents=new Set(s.triggeredEvents||[]);
+      G=s;App.goTo(5);showToast('✅ Career loaded!','');
+      if(G.season?.finished)setTimeout(()=>{if(G.player.age>=34)UI.showAgeCapModal();else UI.showSeasonEndModal();},400);
+    }catch(e){showToast('❌ Load failed','err');}
+  },
+
+  confirmRetirement(){
+    closeModal();
+    showModal(`
+      <div class="modal-title">🏆 Retire to Hall of Fame?</div>
+      <p style="color:var(--text-dim);font-size:13px;margin-bottom:20px;">Your legend will be immortalised. This career will end and your stats will be preserved forever.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" style="flex:1;" onclick="saveToHOF();localStorage.removeItem('propath3_save');closeModal();App.goTo(0);">🏆 Retire Now</button>
+        <button class="btn btn-ghost" style="flex:1;" onclick="closeModal();UI.showSeasonEndModal()">↩ Go Back</button>
+      </div>`);
+  },
+
+  confirmNewCareer(){
+    showModal(`
+      <div class="modal-title">Start New Career?</div>
+      <p style="color:var(--text-dim);font-size:13px;margin-bottom:20px;">Consider retiring to the Hall of Fame first.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-danger" style="flex:1;" onclick="saveToHOF();localStorage.removeItem('propath3_save');closeModal();App.goTo(0)">🏆 Retire &amp; New Career</button>
+        <button class="btn btn-ghost" style="flex:1;" onclick="closeModal()">Cancel</button>
+      </div>`);
+  },
+
+  showFreeAgentOffers(){UI.showFreeAgentOffers();},
+};
+
+// ── Modal helpers ─────────────────────────────────────────────
+function showModal(html,isBlocking=false){
+  const layer=document.getElementById('modalLayer');
+  layer.style.display='flex';
+  const blockClick=isBlocking?'':'onclick="closeModal()"';
+  layer.innerHTML=`<div class="modal-backdrop" ${blockClick} style="animation:fadeIn .25s ease;"><div class="modal-box modal-box-anim" onclick="event.stopPropagation()">${html}</div></div>`;
+}
+function closeModal(){const layer=document.getElementById('modalLayer');layer.style.display='none';layer.innerHTML='';}
+
+function showToast(msg,type=''){
+  const wrap=document.getElementById('toastWrap');if(!wrap)return;
+  const t=document.createElement('div');t.className=`toast ${type}`;t.textContent=msg;
+  wrap.appendChild(t);
+  setTimeout(()=>t.classList.add('show'),10);
+  setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),350);},2800);
+}
+
+// ── Character Creation ─────────────────────────────────────────
+function renderCreationStep(){
+  document.getElementById('creation-content').innerHTML=creationStep===1?stepIdentityHTML():creationStep===2?stepNationalityHTML():creationStep===3?stepPositionHTML():creationStep===4?stepClubHTML():stepReviewHTML();
+  renderStepsBar();
+}
+function renderStepsBar(){
+  const labels=['Identity','Nationality','Position','Club','Review'];
+  document.getElementById('steps-bar').innerHTML=labels.map((l,i)=>{
+    const n=i+1,cls=n<creationStep?'step done':n===creationStep?'step active':'step';
+    return`<div class="${cls}"><div class="step-dot">${n<creationStep?'✓':n}</div></div>${i<4?'<div class="step-line"></div>':''}`;
+  }).join('');
+}
+function stepIdentityHTML(){
+  return`<div class="section-label">Step 1 of 4</div><h2>Who Are You?</h2>
+    <p class="lead">Your name and starting age.</p>
+    <div class="form-grid">
+      <div class="form-group"><label>First Name</label><input type="text" id="f-firstName" value="${draft.firstName}" placeholder="Marcus" maxlength="20"><span class="field-error" id="err-first">Enter your first name</span></div>
+      <div class="form-group"><label>Last Name</label><input type="text" id="f-lastName" value="${draft.lastName}" placeholder="Silva" maxlength="24"><span class="field-error" id="err-last">Enter your last name</span></div>
+      <div class="form-group full"><label>Nickname <span style="font-size:10px;color:var(--text-muted);text-transform:none;letter-spacing:0;">(optional)</span></label><input type="text" id="f-nickname" value="${draft.nickname}" placeholder="The Flash" maxlength="20"></div>
+      <div class="form-group full"><label>Starting Age</label>
+        <div class="age-slider-wrap"><div class="age-display" id="ageDisplay">${draft.age}</div>
+        <div class="age-info"><input type="range" id="ageSlider" min="15" max="30" value="${draft.age}" oninput="updateAge(this.value)">
+        <div class="range-labels"><span>15 — Youth Academy</span><span>30 — Veteran</span></div>
+        <p class="age-desc-text" id="ageDesc">${AGE_DESC[draft.age]||''}</p></div></div></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-secondary" onclick="App.goTo(0)">← Back</button><button class="btn btn-primary" onclick="step1Next()">Continue →</button></div>`;
+}
+function stepNationalityHTML(){
+  const flags=NATIONS.map(n=>`<div class="nation-btn ${draft.nation===n.name?'selected':''}" onclick="selectNation('${n.name.replace(/'/g,"\\'")}')"><span class="nation-flag">${n.flag}</span><span>${n.name}</span></div>`).join('');
+  return`<div class="section-label">Step 2 of 4</div><h2>Nationality</h2>
+    <p class="lead">Where does your footballer come from?</p>
+    <input type="text" id="nationSearch" placeholder="🔍 Search country…" oninput="filterNationsGrid(this.value)" style="margin-bottom:10px;">
+    <div class="nations-grid" id="nationsGrid">${flags}</div>
+    <span class="field-error" id="err-nation" style="margin-top:6px;">Please select a nationality</span>
+    <div class="btn-row"><button class="btn btn-secondary" onclick="creationStep=1;renderCreationStep()">← Back</button><button class="btn btn-primary" onclick="step2Next()">Continue →</button></div>`;
+}
+function stepPositionHTML(){
+  return`<div class="section-label">Step 3 of 4</div><h2>Position & Style</h2>
+    <p class="lead">Your role on the pitch and the archetype that defines your game.</p>
+    <div class="field-label">Position</div>
+    <div class="position-grid">${POSITIONS.map(p=>`<div class="pos-btn ${draft.position===p.acronym?'selected':''}" onclick="selectPos('${p.acronym}')"><span class="pos-acronym">${p.acronym}</span><span class="pos-name">${p.name}</span></div>`).join('')}</div>
+    <span class="field-error" id="err-pos">Please select a position</span>
+    <div class="field-label" style="margin-top:18px;">Preferred Foot</div>
+    <div style="display:flex;gap:8px;margin-bottom:18px;">${['Right','Left','Both'].map(f=>`<div class="pos-btn ${draft.foot===f?'selected':''}" onclick="selectFoot('${f}')" style="min-width:90px;"><span class="pos-acronym">${f[0]}</span><span class="pos-name">${f} Foot</span></div>`).join('')}</div>
+    <div class="field-label">Playing Style</div>
+    <div class="trait-grid">${TRAITS.map((t,i)=>`<div class="trait-card ${draft.trait===i?'selected':''}" onclick="selectTrait(${i})"><span class="trait-icon">${t.icon}</span><div class="trait-name">${t.name}</div><div class="trait-desc">${t.desc}</div></div>`).join('')}</div>
+    <span class="field-error" id="err-trait">Please pick a playing style</span>
+    <div class="btn-row"><button class="btn btn-secondary" onclick="creationStep=2;renderCreationStep()">← Back</button><button class="btn btn-primary" onclick="step3Next()">Continue →</button></div>`;
+}
+
+function stepClubHTML(){
+  if(!draft.position||draft.age===undefined)return'<p>Please complete previous steps first.</p>';
+  const attrs=E.buildAttrs(draft.position,draft.age,draft.trait);
+  const ovr=E.calcOVR(attrs,draft.position);
+  // Determine which tiers are appropriate based on OVR and age
+  // Players can pick any tier but get a recommendation
+  const recTier=ovr>=72?1:ovr>=68?2:ovr>=64?3:ovr>=60?4:5;
+  const forcedYouth=draft.age<=17; // under 18: must pick a youth/lower academy
+
+  // Build tier sections — each tier shows a grid of clubs
+  const tierLabels={1:'🔵 Premier League',2:'🟢 Championship',3:'🟡 League One',4:'🟠 League Two',5:'⚫ National Youth League'};
+  const tierDescs={
+    1:'Top flight clubs — high pressure, world-class facilities.',
+    2:'Competitive second tier — great for development.',
+    3:'Strong third tier — regular first-team football.',
+    4:'Fourth tier — build your foundation.',
+    5:'Youth academy — raw development pathway.',
+  };
+
+  // Generate club tiles for all valid tiers
+  let tiersHTML='';
+  const validTiers=forcedYouth?[5,4]:[5,4,3,2,1];
+  for(const tier of validTiers){
+    const clubs=CLUBS[tier]||[];
+    const isRec=tier===recTier&&!forcedYouth;
+    tiersHTML+=`
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <div style="font-size:12px;font-weight:700;color:${isRec?'var(--accent)':'var(--text)'};">${tierLabels[tier]}${isRec?' ⭐ Recommended':''}</div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">${tierDescs[tier]}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;">
+          ${clubs.map(c=>`<button class="club-pick-btn btn btn-ghost" data-club="${c}" data-tier="${tier}"
+            style="font-size:11px;padding:8px 10px;text-align:left;border-radius:8px;transition:all .15s;${draft.startClub===c?'border-color:var(--accent);color:var(--accent);background:rgba(0,229,160,.08);':''}"
+            onclick="selectClub('${c.replace(/'/g,"\'")}',${tier})">🏟️ ${c}</button>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  // Foreign leagues section (not available for youth players)
+  if(!forcedYouth&&typeof FOREIGN_LEAGUES!=='undefined'&&FOREIGN_LEAGUES.length){
+    tiersHTML+=`<div style="margin-bottom:6px;margin-top:8px;"><div style="font-size:10px;font-family:'DM Mono',monospace;letter-spacing:2px;color:var(--accent2);margin-bottom:12px;padding-top:12px;border-top:1px solid var(--border);">🌍 FOREIGN LEAGUES</div>`;
+    FOREIGN_LEAGUES.forEach(fl=>{
+      tiersHTML+=`
+        <div style="margin-bottom:18px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px;">${fl.flag} ${fl.name} <span style="font-size:10px;color:var(--text-muted);">(${fl.country})</span></div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Top-flight football in ${fl.country}. Wage premium applies.</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;">
+            ${(fl.clubs||[]).map(c=>`<button class="club-pick-btn btn btn-ghost" data-club="${c}" data-tier="fl_${fl.id}"
+              style="font-size:11px;padding:8px 10px;text-align:left;border-radius:8px;transition:all .15s;${draft.startClub===c?'border-color:var(--accent2);color:var(--accent2);background:rgba(255,107,53,.08);':''}"
+              onclick="selectForeignClub('${c.replace(/'/g,"\'")}','${fl.id}')">🌍 ${c}</button>`).join('')}
+          </div>
+        </div>`;
+    });
+    tiersHTML+=`</div>`;
+  }
+
+  return`<div class="section-label">Step 4 of 5</div>
+    <h2>${forcedYouth?'Choose Your Academy':'Choose Your Starting Club'}</h2>
+    <p class="lead">${forcedYouth?'As a youth player, pick the academy you want to develop at.':'Select the club where your career begins. Your OVR suggests <strong>Tier ${recTier}</strong>, but any club is available.'}</p>
+    <span class="field-error" id="err-club">Please select a club</span>
+    <div style="max-height:420px;overflow-y:auto;margin-bottom:16px;padding-right:4px;">
+      ${tiersHTML}
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="creationStep=3;renderCreationStep()">← Back</button>
+      <button class="btn btn-primary" onclick="step4Next()">Continue →</button>
+    </div>`;
+}
+
+function stepReviewHTML(){
+  const attrs=E.buildAttrs(draft.position,draft.age,draft.trait);
+  const ovr=E.calcOVR(attrs,draft.position);const pot=E.calcPotential(ovr,draft.age);
+  draft.attrs=attrs;draft.overall=ovr;draft.potential=pot;
+  const nat=NATIONS.find(n=>n.name===draft.nation)||{flag:'🌍'};
+  const pos=POSITIONS.find(p=>p.acronym===draft.position)||{};
+  const trait=TRAITS[draft.trait]||{};
+  // Use player-chosen club if available, else auto-assign
+  const _autoClub=assignStartClub(draft.age,ovr);
+  const _chosenTier=draft.startTier||_autoClub.tier;
+  const _chosenLeague=LEAGUES.find(l=>l.tier===_chosenTier)||LEAGUES[0];
+  const startClub=draft.startClub?{clubName:draft.startClub,tier:_chosenTier,name:_chosenLeague.name}:_autoClub;
+  const keys=['pace','shooting','passing','dribbling','defending','physical'];
+  const colors=['#00e5a0','#ff6b35','#4a9eff','#f5c842','#a78bfa','#fb7185'];
+  const names=['PACE','SHOOTING','PASSING','DRIBBLING','DEFENDING','PHYSICAL'];
+  return`<div class="section-label">Step 5 of 5 — Review</div><h2>Ready, Player One?</h2>
+    <div class="player-card-preview"><div class="card-avatar">${nat.flag}</div>
+    <div class="card-info"><div class="card-name">${draft.firstName.toUpperCase()} ${draft.lastName.toUpperCase()}</div>
+    <div class="card-meta"><span class="meta-pill pos">${draft.position}</span><span class="meta-pill age">Age ${draft.age}</span><span class="meta-pill nat">${nat.flag} ${draft.nation}</span></div></div>
+    <div class="card-rating-box"><div class="rating-num">${ovr}</div><div class="rating-label">OVR</div></div></div>
+    <div class="summary-grid">${[['Full Name',`${draft.firstName} ${draft.lastName}`],['Nationality',`${nat.flag} ${draft.nation}`],['Position',`${draft.position} · ${pos.name||''}`],['Style',`${trait.icon||''} ${trait.name||''}`],['Starting Age',`${draft.age}`],['Potential',`${pot} OVR`],['Starting Club',startClub.clubName],['League',startClub.name]].map(([l,v])=>`<div class="summary-item"><div class="s-label">${l}</div><div class="s-value">${v}</div></div>`).join('')}</div>
+    <div class="field-label">Starting Attributes</div>
+    <div class="stat-bars">${keys.map((k,i)=>`<div class="stat-row"><span class="stat-name">${names[i]}</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${attrs[k]}%;background:${colors[i]};"></div></div><span class="stat-val" style="color:${colors[i]};">${attrs[k]}</span></div>`).join('')}</div>
+    <div class="btn-row"><button class="btn btn-secondary" onclick="creationStep=4;renderCreationStep()">← Edit</button><button class="btn btn-primary" style="font-size:15px;" onclick="beginCareer()">⚽ Begin Career</button></div>`;
+}
+
+function updateAge(v){draft.age=parseInt(v);document.getElementById('ageDisplay').textContent=v;document.getElementById('ageDesc').textContent=AGE_DESC[v]||'';}
+function filterNationsGrid(q){
+  const grid=document.getElementById('nationsGrid');if(!grid)return;
+  grid.innerHTML=NATIONS.filter(n=>n.name.toLowerCase().includes(q.toLowerCase())).map(n=>`<div class="nation-btn ${draft.nation===n.name?'selected':''}" onclick="selectNation('${n.name.replace(/'/g,"\\'")}')"><span class="nation-flag">${n.flag}</span><span>${n.name}</span></div>`).join('');
+}
+function selectNation(name){draft.nation=name;document.querySelectorAll('.nation-btn').forEach(b=>b.classList.toggle('selected',b.querySelector('span:last-child')?.textContent===name));}
+function selectPos(ac){draft.position=ac;document.querySelectorAll('.pos-btn').forEach(b=>b.classList.toggle('selected',b.querySelector('.pos-acronym')?.textContent===ac));}
+function selectFoot(f){draft.foot=f;document.querySelectorAll('.pos-btn').forEach(b=>{const pa=b.querySelector('.pos-acronym');if(pa&&['R','L','B'].includes(pa.textContent))b.classList.toggle('selected',pa.textContent===f[0]);});}
+function selectTrait(i){draft.trait=i;document.querySelectorAll('.trait-card').forEach((c,idx)=>c.classList.toggle('selected',idx===i));}
+function step1Next(){
+  draft.firstName=document.getElementById('f-firstName')?.value.trim()||'';draft.lastName=document.getElementById('f-lastName')?.value.trim()||'';draft.nickname=document.getElementById('f-nickname')?.value.trim()||'';
+  let ok=true;
+  if(!draft.firstName){document.getElementById('err-first')?.classList.add('show');ok=false;}else document.getElementById('err-first')?.classList.remove('show');
+  if(!draft.lastName){document.getElementById('err-last')?.classList.add('show');ok=false;}else document.getElementById('err-last')?.classList.remove('show');
+  if(ok){creationStep=2;renderCreationStep();}
+}
+function step2Next(){if(!draft.nation){document.getElementById('err-nation')?.classList.add('show');return;}creationStep=3;renderCreationStep();}
+function step3Next(){
+  let ok=true;
+  if(!draft.position){document.getElementById('err-pos')?.classList.add('show');ok=false;}else document.getElementById('err-pos')?.classList.remove('show');
+  if(draft.trait===null){document.getElementById('err-trait')?.classList.add('show');ok=false;}else document.getElementById('err-trait')?.classList.remove('show');
+  if(ok){creationStep=4;renderCreationStep();}
+}
+function step4Next(){
+  if(!draft.startClub){document.getElementById('err-club')?.classList.add('show');return;}
+  document.getElementById('err-club')?.classList.remove('show');
+  creationStep=5;renderCreationStep();
+}
+function selectClub(clubName,tier){
+  draft.startClub=clubName;draft.startTier=tier;draft.startForeignLeagueId=null;
+  document.querySelectorAll('.club-pick-btn').forEach(b=>b.classList.toggle('selected',b.dataset.club===clubName));
+}
+function selectForeignClub(clubName,leagueId){
+  draft.startClub=clubName;draft.startTier='foreign';draft.startForeignLeagueId=leagueId;
+  document.querySelectorAll('.club-pick-btn').forEach(b=>b.classList.toggle('selected',b.dataset.club===clubName));
+}
+function beginCareer(){initGame(draft);App.goTo(5);}
