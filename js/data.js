@@ -35,7 +35,9 @@ const NATIONS=[
   {name:'Albania',flag:'🇦🇱',callupOVR:66},{name:'North Macedonia',flag:'🇲🇰',callupOVR:65},
   {name:'Bolivia',flag:'🇧🇴',callupOVR:63},{name:'Zambia',flag:'🇿🇲',callupOVR:62},
   {name:'China',flag:'🇨🇳',callupOVR:64},{name:'Tanzania',flag:'🇹🇿',callupOVR:60},
-  {name:'Kosovo',flag:'🇽🇰',callupOVR:64},{name:'Russia',flag:'🇷🇺',callupOVR:73},{name:'Somalia',flag:'🇸🇴',callupOVR:65}
+  {name:'Kosovo',flag:'🇽🇰',callupOVR:64},{name:'Russia',flag:'🇷🇺',callupOVR:73},
+  {name:'Somalia',flag:'🇸🇴',callupOVR:65},{name:'India',flag:'🇮🇳',callupOVR:60},
+  {name:'Panama',flag:'🇵🇦',callupOVR:74},{name:'DRC',flag:'🇨🇩',callupOVR:74}
 ];
 
 const POSITIONS=[{acronym:'CB',name:'Centre Back'},{acronym:'LB',name:'Left Back'},{acronym:'RB',name:'Right Back'},{acronym:'CDM',name:'Def. Midfielder'},{acronym:'CM',name:'Centre Mid'},{acronym:'CAM',name:'Att. Midfielder'},{acronym:'LW',name:'Left Winger'},{acronym:'RW',name:'Right Winger'},{acronym:'CF',name:'Centre Forward'},{acronym:'ST',name:'Striker'}];
