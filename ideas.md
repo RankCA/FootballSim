@@ -7,8 +7,8 @@
     - 🇮🇹 Serie A
 - [x] **Tournaments**: 
     - 🏆 World Cup (Initial implementation)
-    - 🇪🇺 Champions League ()
-    - 🏴󠁧󠁢󠁥󠁮󠁧󠁿 FA Cup & Community Shield
+    - 🇪🇺 Champions League (needs fixing)
+    - 🏴󠁧󠁢󠁥󠁮󠁧󠁿 FA Cup & Community Shield (needs fixing too)
 
 ---
 
