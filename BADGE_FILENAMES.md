@@ -203,6 +203,31 @@ All files are **PNG**, placed in the folder shown. Add the file to its respectiv
 
 ---
 
+## 🇫🇷 Ligue 1 → `badges/ligue1/`
+
+| Club Name | Filename |
+|-----------|----------|
+| PSG | `psg.png` |
+| Lens | `lens.png` |
+| Lyon | `lyon.png` |
+| Marseille | `marseille.png` |
+| LOSC | `losc.png` |
+| Rennes | `rennes.png` |
+| Monaco | `monaco.png` |
+| Strasbourg | `strasbourg.png` |
+| Brest | `brent.png` |
+| Lorient | `lorient.png` |
+| Toulouse | `toulouse.png` |
+| Angers | `angers.png` |
+| Le Havre | `le_havre.png` |
+| Paris FC | `paris_fc.png` |
+| Nice | `nice.png` |
+| Auxerre | `auxerre.png` |
+| Nantes | `nantes.png` |
+| Metz | `metz.png` |
+
+---
+
 ## Tips
 - Badges don't need to be exact size. They're rescaled to fit (20px in table, 20px in fixture panel, 20px in match HUD)
 - Square PNGs work best (e.g. 64×64, 128×128, 512×512)
