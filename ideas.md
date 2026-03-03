@@ -1,7 +1,7 @@
 # Patch Notes & Future Ideas
 
 ## 📋 Latest Updates
-- [x] **Club Logos Added**: Just the Premier League for now, other leagues and division coming soon.
+- [x] **Club Badges Added**
 - [x] **New Leagues**: 
     - 🇪🇸 LaLiga 
     - 🇮🇹 Serie A
