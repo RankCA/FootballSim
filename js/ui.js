@@ -2,6 +2,54 @@
 //  ProPath v4 — ui.js
 // ════════════════════════════════════════════════════════════
 
+// ── Cup bracket match card ─────────────────────────────────────────────────────
+// Renders a single match card for the bracket view.
+// home/away = team names, homeScore/awayScore = null if not yet played,
+// winner = winning team name or null, myClub = player's club name,
+// isMyMatch = true if player's club is involved, upcoming = true if this is next match to be played.
+function _bracketMatchCard(home, away, homeScore, awayScore, winner, myClub, isMyMatch, upcoming){
+  const played = homeScore !== null;
+  const isHomeMy = home === myClub;
+  const isAwayMy = away === myClub;
+  const homeWon = played && homeScore > awayScore;
+  const awayWon = played && awayScore > homeScore;
+  const homeBg = isHomeMy
+    ? 'rgba(0,229,160,.12)'
+    : homeWon ? 'rgba(245,200,66,.06)' : 'var(--surface2)';
+  const awayBg = isAwayMy
+    ? 'rgba(0,229,160,.12)'
+    : awayWon ? 'rgba(245,200,66,.06)' : 'var(--surface2)';
+  const homeTxtColor = isHomeMy ? 'var(--accent)' : homeWon ? 'var(--gold)' : 'var(--text)';
+  const awayTxtColor = isAwayMy ? 'var(--accent)' : awayWon ? 'var(--gold)' : 'var(--text)';
+  const border = upcoming ? '1px solid rgba(0,229,160,.4)' : isMyMatch ? '1px solid rgba(0,229,160,.2)' : '1px solid var(--border)';
+  const homeLoser = played && !homeWon;
+  const awayLoser = played && !awayWon;
+  const scoreHTML = played
+    ? `<div style="display:flex;gap:3px;font-size:11px;font-weight:700;font-family:'DM Mono',monospace;">
+        <span style="color:${homeWon?'var(--gold)':'var(--text-muted)'};">${homeScore}</span>
+        <span style="color:var(--text-muted);">–</span>
+        <span style="color:${awayWon?'var(--gold)':'var(--text-muted)'};">${awayScore}</span>
+       </div>`
+    : `<div style="font-size:9px;color:var(--text-muted);font-family:'DM Mono',monospace;">${upcoming?'NEXT':'TBD'}</div>`;
+  const teamRow=(name,bg,txtColor,loser,isMe)=>{
+    const badge=typeof clubBadgeImg==='function'?clubBadgeImg(name,'14px','margin-right:3px;flex-shrink:0;'):'';
+    return`<div style="
+    display:flex;align-items:center;justify-content:space-between;
+    background:${bg};padding:5px 8px;
+    opacity:${loser?0.45:1};
+  ">
+    <span style="font-size:11px;font-weight:${isMe?700:400};color:${txtColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:95px;display:flex;align-items:center;">${badge}${isMe?'⭐ ':''}<span title="${name}">${name.length>14?name.slice(0,13)+'…':name}</span></span>
+  </div>`;
+  };
+  return `<div style="border:${border};border-radius:7px;overflow:hidden;margin-bottom:2px;background:var(--surface);">
+    ${teamRow(home,homeBg,homeTxtColor,homeLoser,isHomeMy)}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 8px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);">
+      ${scoreHTML}
+    </div>
+    ${teamRow(away,awayBg,awayTxtColor,awayLoser,isAwayMy)}
+  </div>`;
+}
+
 const UI = {
 
   ratingColor(v){if(v>=80)return'#00e5a0';if(v>=70)return'#f5c842';if(v>=60)return'#ff6b35';return'#ff4757';},
@@ -27,7 +75,7 @@ const UI = {
             <span class="meta-pill age">Age ${p.age}</span>
             <span class="meta-pill nat">${nat.flag} ${p.nation}</span>
             <span class="meta-pill" style="color:var(--accent2);border-color:rgba(255,107,53,.3);">${trait.icon||''} ${trait.name||''}</span>
-            ${!cl.isFreeAgent?`<span class="meta-pill" style="color:var(--blue);border-color:rgba(74,158,255,.3);">🏟️ ${cl.name}</span>`:'<span class="meta-pill chip-red">🔓 Free Agent</span>'}
+            ${!cl.isFreeAgent?`<span class="meta-pill" style="color:var(--blue);border-color:rgba(74,158,255,.3);display:inline-flex;align-items:center;gap:3px;">${typeof clubBadgeImg==='function'?clubBadgeImg(cl.name,'14px',''):''} ${cl.name}</span>`:'<span class="meta-pill chip-red">🔓 Free Agent</span>'}
             ${G.agentUpgraded?'<span class="meta-pill chip-purple">🤵 Elite Agent</span>':''}
           </div>
         </div>
@@ -83,28 +131,201 @@ const UI = {
   },
 
   renderLeagueTable(){
-    const sorted=getSortedTable();
-    const league=LEAGUES.find(l=>l.tier===G.club.tier)||LEAGUES[0];
-    document.getElementById('leagueName').textContent=G.league.name;
-    const qual=[];
-    if(league.promoted>0)qual.push(`Top ${league.promoted}: Promoted`);
-    if(G.club.tier===1)qual.push('Top 4: Europa Elite');
-    if(league.relegated)qual.push(`Bottom ${league.relegated}: Relegated`);
-    document.getElementById('leagueQualInfo').textContent=qual.join(' · ');
-    const el=document.getElementById('leagueTable');
-    el.querySelector('thead').innerHTML=`<tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Form</th></tr>`;
-    el.querySelector('tbody').innerHTML=sorted.map((t,i)=>{
-      const pos=i+1;
-      const pc=pos<=league.promoted?'top':pos>sorted.length-(league.relegated||0)?'rel':'mid';
-      return`<tr class="${t.isPlayer?'my-team':''}">
-        <td class="pos-col ${pc}">${pos}</td>
-        <td class="team-col" style="min-width:130px;font-size:12px;">${t.name}${t.isPlayer?' ⭐':''}</td>
-        <td>${t.played}</td><td>${t.won}</td><td>${t.drawn}</td><td>${t.lost}</td>
-        <td>${t.gf}</td><td>${t.ga}</td><td>${t.gd>0?'+':''}${t.gd}</td>
-        <td style="font-weight:700;color:var(--text);">${t.pts}</td>
-        <td><div class="form-dots">${UI.formDots(t.form)}</div></td>
-      </tr>`;
-    }).join('');
+    const sel=document.getElementById('leagueViewSelect');
+    if(sel){
+      // My league first
+      let opts=`<option value="league">🏆 ${G.league.name} (My League)</option>`;
+      // All other domestic league tiers from allLeagues
+      // (skip if player is in a foreign league — they have their own league)
+      if(G.allLeagues&&!G.club.isForeign){
+        LEAGUES.forEach(l=>{
+          if(l.tier===G.league.tier) return; // already shown as "My League"
+          const tierIcons={1:'🔵',2:'🟢',3:'🟡',4:'🟠',5:'⚫'};
+          opts+=`<option value="tier_${l.tier}">${tierIcons[l.tier]||'⚽'} ${l.name}</option>`;
+        });
+      }
+      // Cups
+      Object.entries(G.cups||{}).forEach(([id,cup])=>{
+        const cd=CUPS.find(c=>c.id===id);if(!cd)return;
+        opts+=`<option value="cup_${id}">${cd.icon} ${cd.name}</option>`;
+      });
+      if(sel.innerHTML!==opts)sel.innerHTML=opts;
+      if(!sel.value||sel.value==='')sel.value='league';
+    }
+    const view=(sel?.value)||'league';
+    UI.switchLeagueView(view);
+  },
+
+  switchLeagueView(view){
+    const tableWrap=document.getElementById('leagueTableWrapper');
+    const cupWrap=document.getElementById('cupBracketView');
+    const qualEl=document.getElementById('leagueQualInfo');
+    const nameEl=document.getElementById('leagueName');
+    if(!tableWrap||!cupWrap)return;
+
+    const renderTable=(teams, leagueData, isMyLeague)=>{
+      tableWrap.style.display='';cupWrap.style.display='none';
+      if(nameEl)nameEl.textContent=leagueData.name+(isMyLeague?' ⭐':'');
+      const qual=[];
+      if(leagueData.promoted>0)qual.push(`Top ${leagueData.promoted}: Promoted`);
+      if(leagueData.tier===1)qual.push('Top 4: Champions League');
+      if(leagueData.relegated)qual.push(`Bottom ${leagueData.relegated}: Relegated`);
+      if(qualEl)qualEl.textContent=qual.join(' · ');
+      const sorted=[...teams].sort((a,b)=>b.pts-a.pts||(b.gd-a.gd)||(b.gf-a.gf));
+      const el=document.getElementById('leagueTable');
+      el.querySelector('thead').innerHTML=`<tr><th>#</th><th>Club</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GF</th><th>GA</th><th>GD</th><th>Pts</th><th>Form</th></tr>`;
+      el.querySelector('tbody').innerHTML=sorted.map((t,i)=>{
+        const pos=i+1;
+        const pc=pos<=leagueData.promoted?'top':pos>sorted.length-(leagueData.relegated||0)?'rel':'mid';
+        const badgeHtml=typeof clubBadgeImg==='function'?clubBadgeImg(t.name,'18px','vertical-align:middle;margin-right:5px;flex-shrink:0;'):'';
+        return`<tr class="${t.isPlayer?'my-team':''}">
+          <td class="pos-col ${pc}">${pos}</td>
+          <td class="team-col" style="min-width:130px;font-size:12px;"><span style="display:flex;align-items:center;">${badgeHtml}<span>${t.name}${t.isPlayer?' ⭐':''}</span></span></td>
+          <td>${t.played}</td><td>${t.won}</td><td>${t.drawn}</td><td>${t.lost}</td>
+          <td>${t.gf}</td><td>${t.ga}</td><td>${t.gd>0?'+':''}${t.gd}</td>
+          <td style="font-weight:700;color:var(--text);">${t.pts}</td>
+          <td><div class="form-dots">${UI.formDots(t.form)}</div></td>
+        </tr>`;
+      }).join('');
+    };
+
+    if(view==='league'){
+      // My own league
+      const leagueData=LEAGUES.find(l=>l.tier===G.league.tier)||LEAGUES[0];
+      renderTable(G.league.teams, leagueData, true);
+      // Append cup mini-summaries below the table
+      const cupSummary=document.getElementById('leagueCupSummary');
+      if(cupSummary){
+        const avail=CUPS.filter(c=>G.cups&&G.cups[c.id]);
+        if(avail.length){
+          cupSummary.style.display='';
+          cupSummary.innerHTML=`<div class="section-label" style="margin:16px 0 8px;">Cup Competitions</div>`+avail.map(cd=>{
+            const c=G.cups[cd.id];
+            let status,color,nextDate='';
+            if(c.winner){status='🏆 Winner!';color='var(--gold)';}
+            else if(c.eliminated){status=`Eliminated — ${cd.rounds[Math.max(0,c.stage-1)]||'early'}`;color='var(--red)';}
+            else{
+              status=`Next: ${cd.rounds[c.stage]||'Final'}`;color='var(--accent)';
+              const nd=(c.matchDays||[]).find(d=>d>G.season.dayOfSeason);
+              if(nd)nextDate=` · ${E.getDayLabel(nd)}`;
+            }
+            const pct=(c.stage/(cd.rounds.length))*100;
+            return`<div class="comp-row" style="cursor:pointer;" onclick="document.getElementById('leagueViewSelect').value='cup_${cd.id}';UI.switchLeagueView('cup_${cd.id}')">
+              <div class="comp-badge" style="background:rgba(245,200,66,.1);">${cd.icon}</div>
+              <div class="comp-info" style="flex:1;">
+                <div class="comp-name">${cd.name}</div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+                  <div style="flex:1;height:3px;background:var(--border);border-radius:2px;">
+                    <div style="width:${c.eliminated||c.winner?100:pct}%;height:100%;background:${color};border-radius:2px;transition:width .5s;"></div>
+                  </div>
+                  <span style="font-size:10px;font-family:'DM Mono',monospace;color:var(--text-muted);">${c.stage}/${cd.rounds.length}</span>
+                </div>
+              </div>
+              <div class="comp-result" style="color:${color};font-size:11px;">${status}${nextDate}</div>
+            </div>`;
+          }).join('');
+        } else {
+          cupSummary.style.display='none';
+        }
+      }
+    } else if(view.startsWith('tier_')){
+      // Another league tier from allLeagues
+      const tier=parseInt(view.replace('tier_',''));
+      const leagueData=LEAGUES.find(l=>l.tier===tier)||LEAGUES[0];
+      const al=G.allLeagues?.[tier];
+      if(!al){tableWrap.style.display='';cupWrap.style.display='none';
+        if(nameEl)nameEl.textContent=leagueData.name;
+        document.getElementById('leagueTable').querySelector('tbody').innerHTML=
+          '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:20px;">No data yet — play some matches first.</td></tr>';
+        return;
+      }
+      renderTable(al.teams, leagueData, false);
+    } else {
+      // ── Cup bracket view ─────────────────────────────────────
+      tableWrap.style.display='none';cupWrap.style.display='';
+      const cupId=view.replace('cup_','');
+      const cup=G.cups?.[cupId];
+      const cd=CUPS.find(c=>c.id===cupId);
+      if(!cup||!cd){cupWrap.innerHTML='<div class="empty-state">Cup data unavailable.</div>';return;}
+      if(nameEl)nameEl.textContent=cd.name;
+      if(qualEl)qualEl.textContent=cd.euroQualify?'Top 4 finish required to qualify':'';
+
+      const rounds=cd.rounds||[];
+      const myClub=G.club.name;
+      const bracketRounds=cup.bracketRounds||[];
+
+      // Status banner
+      let statusHTML;
+      if(cup.winner){
+        statusHTML=`<div style="background:rgba(245,200,66,.12);border:1px solid rgba(245,200,66,.35);border-radius:10px;padding:12px 16px;margin-bottom:14px;text-align:center;">
+          <span style="font-size:24px;">🏆</span>
+          <div style="font-weight:700;color:var(--gold);font-size:14px;margin-top:4px;">WINNER — ${cd.name}</div>
+        </div>`;
+      } else if(cup.eliminated){
+        const exitRound=rounds[Math.max(0,cup.stage-1)]||'Early rounds';
+        statusHTML=`<div style="background:rgba(255,71,87,.06);border:1px solid rgba(255,71,87,.2);border-radius:10px;padding:12px 16px;margin-bottom:14px;text-align:center;">
+          <span style="font-size:20px;">💔</span>
+          <div style="font-weight:700;color:var(--red);font-size:13px;margin-top:4px;">Eliminated — ${exitRound}</div>
+        </div>`;
+      } else {
+        const nextDay=(cup.matchDays||[]).find(d=>d>G.season.dayOfSeason);
+        statusHTML=`<div style="background:rgba(0,229,160,.07);border:1px solid rgba(0,229,160,.2);border-radius:10px;padding:12px 16px;margin-bottom:14px;text-align:center;">
+          <span style="font-size:20px;">▶</span>
+          <div style="font-weight:700;color:var(--accent);font-size:13px;margin-top:4px;">Still In — Next: ${rounds[cup.stage]||'Final'}</div>
+          ${nextDay?`<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${E.getDayLabel(nextDay)}</div>`:''}
+        </div>`;
+      }
+
+      // ── Build bracket HTML ──────────────────────────────────────────────────
+      // Only display rounds that have actually been generated (bracketRounds array length).
+      // Unplayed future rounds are shown as placeholder columns with "?" cards.
+      const numRounds=rounds.length;
+      let bracketHTML='';
+      if(bracketRounds.length>0){
+        bracketHTML=`<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px;">
+        <div style="display:flex;gap:0;min-width:${numRounds*158}px;align-items:flex-start;">`;
+        for(let r=0;r<numRounds;r++){
+          const br=bracketRounds[r]; // may be undefined for future rounds
+          const isCurrentRound=r===cup.stage&&!cup.eliminated&&!cup.winner;
+          const isPastRound=r<cup.stage||(cup.eliminated&&r<=cup.stage)||(cup.winner);
+          const isFuture=r>=bracketRounds.length&&!cup.eliminated&&!cup.winner;
+          const colColor=isCurrentRound?'var(--accent)':isPastRound?'var(--text-dim)':'var(--text-muted)';
+          let matchCards='';
+          if(isFuture){
+            // Future round — how many matches? Half of previous survivors
+            const prevLen=bracketRounds[bracketRounds.length-1]?.matches?.filter(m=>m.away!=='BYE').length||1;
+            const futureMatches=Math.max(1,Math.ceil(prevLen/2));
+            for(let i=0;i<futureMatches;i++){
+              matchCards+=`<div style="border:1px dashed var(--border);border-radius:7px;overflow:hidden;margin-bottom:2px;background:var(--surface);opacity:0.4;">
+                <div style="padding:7px 8px;font-size:11px;color:var(--text-muted);">TBD</div>
+                <div style="height:1px;background:var(--border);"></div>
+                <div style="padding:7px 8px;font-size:11px;color:var(--text-muted);">TBD</div>
+              </div>`;
+            }
+          } else if(br){
+            const visibleMatches=br.matches.filter(m=>m.away!=='BYE');
+            visibleMatches.forEach(m=>{
+              const played=m.homeScore!==null;
+              const isMyMatch=m.home===myClub||m.away===myClub;
+              matchCards+=_bracketMatchCard(m.home,m.away,m.homeScore,m.awayScore,m.winner,myClub,isMyMatch,!played&&isCurrentRound&&isMyMatch);
+            });
+          }
+          bracketHTML+=`<div style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:0;">
+            <div style="font-size:9px;font-family:'DM Mono',monospace;letter-spacing:1.2px;color:${colColor};text-align:center;padding:6px 4px 10px;border-bottom:1px solid var(--border);margin-bottom:8px;text-transform:uppercase;">${rounds[r]}</div>
+            <div style="display:flex;flex-direction:column;gap:5px;padding:0 4px;">${matchCards||'<div style="font-size:10px;color:var(--text-muted);padding:8px;text-align:center;">—</div>'}</div>
+          </div>${r<numRounds-1?`<div style="width:1px;background:var(--border);align-self:stretch;margin:26px 0 0;"></div>`:''}`;
+        }
+        bracketHTML+=`</div></div>`;
+      } else {
+        bracketHTML=`<div style="font-size:12px;color:var(--text-muted);padding:16px;text-align:center;">Draw not yet made.</div>`;
+      }
+
+      cupWrap.innerHTML=`
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">${cd.desc}</div>
+        ${statusHTML}
+        <div style="font-size:10px;font-family:'DM Mono',monospace;letter-spacing:2px;color:var(--text-muted);margin-bottom:10px;">BRACKET</div>
+        ${bracketHTML}`;
+    }
   },
 
   formDots(arr){
@@ -164,16 +385,25 @@ const UI = {
   renderTransfersTab(){
     const el=document.getElementById('transfersContent');if(!el)return;
     const offers=G.pendingTransferOffers||[];
-    if(!offers.length){el.innerHTML=`<div class="empty-state">📭<br><br>No transfer offers at the moment.<br><span style="font-size:11px;color:var(--text-muted);">Score goals, get MOTM, or request a transfer listing to attract clubs.</span></div>`;return;}
-    el.innerHTML=`<div class="transfer-inbox">${offers.map(o=>`
+    const day=G.season.dayOfSeason;
+    const win=isInTransferWindow(day);
+    const winBanner=win
+      ?`<div style="background:rgba(0,229,160,.08);border:1px solid rgba(0,229,160,.25);border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">🟢</span><div><div style="font-size:12px;font-weight:700;color:var(--accent);">${win==='summer'?'Summer':'January'} Transfer Window Open</div><div style="font-size:11px;color:var(--text-dim);">You can accept or negotiate transfers right now.</div></div></div>`
+      :`<div style="background:rgba(255,71,87,.06);border:1px solid rgba(255,71,87,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;"><span style="font-size:18px;">🔴</span><div><div style="font-size:12px;font-weight:700;color:var(--red);">Transfer Window Closed</div><div style="font-size:11px;color:var(--text-dim);">Summer window: July–August. Winter window: January. Offers survive until the window they were received in closes — they don't disappear mid-season.</div></div></div>`;
+    if(!offers.length){el.innerHTML=winBanner+`<div class="empty-state">📭<br><br>No transfer offers at the moment.<br><span style="font-size:11px;color:var(--text-muted);">Score goals, get MOTM, or request a transfer listing to attract clubs.</span></div>`;return;}
+    el.innerHTML=winBanner+`<div class="transfer-inbox">${offers.map(o=>`
       <div class="transfer-offer pending">
-        <div class="offer-header"><div class="offer-club">🏟️ ${o.fromClub}</div>
+        <div class="offer-header"><div class="offer-club" style="display:flex;align-items:center;gap:6px;">${typeof clubBadgeImg==='function'?clubBadgeImg(o.fromClub,'20px',''):(o.isForeign?'🌍':'🏟️')} ${o.fromClub}</div>
         <div style="font-size:10px;font-family:'DM Mono',monospace;color:var(--text-muted);">Expires: ${E.getDayLabel(o.expires)}</div></div>
-        <div class="offer-detail" style="margin-bottom:12px;">${o.league} · £${o.salary.toLocaleString()}/wk · ${o.contractYears}-year contract</div>
+        <div class="offer-detail" style="margin-bottom:4px;">${o.league}</div>
+        <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:12px;">£${o.salary.toLocaleString()}/wk · ${o.contractYears}-year contract${o.counterMade?' · Counter made':''}</div>
         <div class="offer-actions">
-          <button class="btn btn-primary" style="font-size:12px;padding:9px 16px;" onclick="App.acceptTransfer('${o.id}')">✍️ Accept</button>
-          <button class="btn btn-ghost" onclick="App.declineTransfer('${o.id}')">❌ Decline</button>
-          ${!o.saved?`<button class="btn btn-secondary" style="font-size:12px;" onclick="App.saveOffer('${o.id}')">🔖 Think About It</button>`:''}
+          ${win
+            ?`<button class="btn btn-gold" style="font-size:12px;padding:9px 16px;" onclick="openNegotiation('${o.id}')">🤝 Negotiate</button>
+               <button class="btn btn-ghost" onclick="declineTransferOffer('${o.id}');App.renderDashboard();">❌ Decline</button>`
+            :`<div style="font-size:11px;color:var(--text-muted);font-style:italic;">Window closed — offer held until next window</div>
+               <button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" onclick="declineTransferOffer('${o.id}');App.renderDashboard();">🗑️ Clear offer</button>`
+          }
         </div>
       </div>`).join('')}</div>`;
     UI.updateTransferBadge();
@@ -192,6 +422,7 @@ const UI = {
   renderNextFixture(){
     const el=document.getElementById('nextFixturePanel');if(!el)return;
     const day=G.season.dayOfSeason;
+    // matchdays are removed when played, so find(d > day) is always the true next fixture
     const nextLeagueDay=(G.league.matchdays||[]).find(d=>d>day)??null;
     let nextCupDay=null,nextCupLabel='';
     Object.entries(G.cups||{}).forEach(([id,cup])=>{
@@ -205,24 +436,109 @@ const UI = {
     if(nextCupDay!==null)fixtures.push({day:nextCupDay,label:nextCupLabel,icon:'🏆',isCup:true});
     fixtures.sort((a,b)=>a.day-b.day);
     const next=fixtures[0];
-    if(!next){el.innerHTML=`<div class="fixture-empty">No upcoming fixtures scheduled</div>`;return;}
+    if(!next){el.innerHTML=`<div class="fixture-empty">No upcoming fixtures</div>`;return;}
     const daysAway=Math.max(0,next.day-day);
-    const oppPool=G.league.teams.filter(t=>!t.isPlayer);
-    const opp=oppPool[(G.league.nextMatchIdx||0)%Math.max(1,oppPool.length)]?.name||(next.isCup?'Cup Opponents':'Opponents');
-    const urgency=daysAway<=3?'style="color:var(--accent);font-weight:700;"':'';
+    // Use fixture list to show real next opponent
+    let opp='Opponents';
+    if(!next.isCup&&G.league.fixtures&&G.league.fixtures.length>0){
+      const fi=G.league.fixtures[(G.league.nextMatchIdx||0)%G.league.fixtures.length];
+      opp=fi?(fi.home===G.club.name?fi.away:fi.home):'Opponents';
+    } else if(next.isCup){
+      // Find cup and get bracket opponent
+      const activeCups=Object.entries(G.cups||{}).filter(([,c])=>!c.eliminated&&!c.winner);
+      for(const [,cup] of activeCups){
+        const br=cup.bracketRounds?.[cup.stage];
+        const pm=br?.matches?.find(m=>m.isPlayer);
+        if(pm){opp=pm.away||'Cup Opponents';break;}
+      }
+    }
+    const urgency=daysAway<=3?'style="color:var(--accent);font-weight:700;"':daysAway<=7?'style="color:var(--gold);"':'';
+    const daysLabel=daysAway===0?'<span style="color:var(--accent);font-weight:700;">TODAY</span>':daysAway===1?'<span style="color:var(--gold);font-weight:700;">Tomorrow</span>':`<span ${urgency}>In ${daysAway} days</span>`;
+    const myBadge=typeof clubBadgeImg==='function'?clubBadgeImg(G.club.name,'20px','margin-right:2px;'):'';
+    const oppBadge=typeof clubBadgeImg==='function'?clubBadgeImg(opp,'20px','margin-right:2px;'):'';
     el.innerHTML=`<div class="fixture-pill">
-      <span class="fix-badge">${next.icon} NEXT FIXTURE</span>
-      <span class="fix-teams">${G.club.name} <em style="color:var(--text-muted)">vs</em> ${next.isCup?'Cup Opponents':opp}</span>
-      <span class="fix-comp">${next.label}</span>
-      <span class="fix-days" ${urgency}>${daysAway===0?'TODAY':daysAway===1?'Tomorrow':`In ${daysAway} days`}</span>
+      <span class="fix-badge">${next.isCup?'🏆':'⚽'} NEXT FIXTURE</span>
+      <span class="fix-teams" style="display:flex;align-items:center;gap:4px;">
+        ${myBadge}<span>${G.club.name}</span>
+        <em style="color:var(--text-muted);font-style:normal;margin:0 4px;">vs</em>
+        ${oppBadge}<span>${opp}</span>
+      </span>
+      <span class="fix-comp" style="margin-left:auto;">${next.label}</span>
+      <span class="fix-days">${daysLabel}</span>
     </div>`;
   },
 
   renderManagerTab(){
+    const el=document.getElementById('managerContent');if(!el)return;
+
+    // Loan mode — completely different UI
+    if(G.loanActive&&G.loanOriginalClub){
+      const orig=G.loanOriginalClub;
+      el.innerHTML=`
+        <div class="card" style="margin-bottom:14px;border-color:rgba(74,158,255,.3);background:rgba(74,158,255,.04);">
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+            <div style="font-size:36px;">✈️</div>
+            <div>
+              <div style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--blue);letter-spacing:1px;">ON LOAN</div>
+              <div style="font-size:13px;color:var(--text-dim);">${G.club.name} · ${G.loanDaysLeft} day${G.loanDaysLeft!==1?'s':''} remaining</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);line-height:1.7;margin-bottom:14px;">
+            Your parent club is <strong style="color:var(--text);">${orig.name}</strong>. You're on an emergency loan and must return when it expires. Transfer requests and contract negotiations are suspended during this period.
+          </div>
+          <div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:14px;">
+            <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:2px;color:var(--blue);margin-bottom:8px;">LOAN MANAGER</div>
+            <div style="font-size:13px;font-weight:700;">${G.manager.name}</div>
+            <div style="font-size:11px;color:var(--text-dim);">${G.club.name} · ${LEAGUES.find(l=>l.tier===G.club.tier)?.name||'—'}</div>
+          </div>
+        </div>
+        <div class="manager-opts">
+          <div class="manager-opt" onclick="requestLoanCallback()" style="${G._loanRecallUsed?'opacity:.45;':''}">
+            <div class="mo-icon">${G._loanRecallUsed?'🔒':'📞'}</div>
+            <div class="mo-title">${G._loanRecallUsed?'Recall Already Requested':'Request Loan Recall'}</div>
+            <div class="mo-desc">${G._loanRecallUsed?'You had one chance — see out the loan.':'Ask your parent club to bring you back early. One attempt only.'}</div>
+          </div>
+          <div class="manager-opt" onclick="UI.showContractStatus()">
+            <div class="mo-icon">📄</div>
+            <div class="mo-title">View Contract Status</div>
+            <div class="mo-desc">See your parent club contract details.</div>
+          </div>
+        </div>`;
+      return;
+    }
+
     const op=E.managerOpinion(G.player.overall,G.manager.teamAvgOVR);
     const moodColors={favourable:'var(--accent)',good:'var(--accent)',neutral:'var(--gold)',sceptical:'var(--accent2)',poor:'var(--red)'};
     const moodEmoji={favourable:'😄',good:'🙂',neutral:'😐',sceptical:'🤨',poor:'😠'};
-    document.getElementById('managerContent').innerHTML=`
+    const morale=G.morale||50;
+    const moraleColor=morale>=70?'var(--accent)':morale>=45?'var(--gold)':'var(--red)';
+    const moraleLabel=morale>=80?'Excellent':morale>=65?'Good':morale>=45?'Neutral':morale>=25?'Low':'Poor';
+    const brand=G.brand||0;
+    el.innerHTML=`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+        <div style="background:var(--surface2);border-radius:10px;padding:12px;">
+          <div style="font-size:10px;font-family:'DM Mono',monospace;letter-spacing:1.5px;color:var(--text-muted);margin-bottom:6px;">TEAM MORALE</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
+              <div style="width:${morale}%;height:100%;background:${moraleColor};border-radius:3px;transition:width .5s;"></div>
+            </div>
+            <span style="font-size:12px;font-weight:700;color:${moraleColor};">${moraleLabel}</span>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted);line-height:1.5;">
+            ${morale>=75?'🔥 Performance bonus active — higher ratings & selection priority':''}
+            ${morale>=50&&morale<75?'✅ Normal — affects selection chance slightly':''}
+            ${morale<50?'⚠️ Low morale — harder to get selected, lower ratings':''}
+          </div>
+        </div>
+        <div style="background:var(--surface2);border-radius:10px;padding:12px;">
+          <div style="font-size:10px;font-family:'DM Mono',monospace;letter-spacing:1.5px;color:var(--text-muted);margin-bottom:4px;">BRAND</div>
+          <div style="font-size:18px;font-weight:700;color:var(--gold);margin-bottom:4px;">${brand>0?'+':''}${brand} <span style="font-size:11px;color:var(--text-muted);">pts</span></div>
+          <div style="font-size:10px;color:var(--text-muted);line-height:1.5;">
+            ${brand>=40?'🌟 Superstar: +£600/wk passive deal active':brand>=20?'⭐ Rising star: +£300/wk passive deal active':brand>=10?'📈 Building — unlock deals at 20+ pts':'📊 Earn pts via press conferences & media events'}
+            <br>💰 Earning £${Math.floor(brand/5)*100}/wk bonus from brand
+          </div>
+        </div>
+      </div>
       <div class="manager-card">
         <div class="manager-avatar">🧑‍💼</div>
         <div class="manager-info">
@@ -372,16 +688,49 @@ const UI = {
 
   showBlockingEvent(ev){
     if(!ev)return;
-    // World Cup gets a special modal
     if(ev.isWorldCup){UI.showWorldCupModal(ev);return;}
     const bodyText=ev.body?.replace('{{position}}',G.player.position)||'';
+
+    // Press conference gets special treatment
+    if(ev.isPressConf){
+      const moraleVal=G.morale||50;
+      const moraleColor=moraleVal>=70?'var(--accent)':moraleVal>=45?'var(--gold)':'var(--red)';
+      const brandVal=G.brand||0;
+      const choicesHTML=ev.choices.map(c=>`
+        <button class="event-choice" onclick="App.resolveBlockingEvent('${c.fn}')" style="text-align:left;">
+          <div class="ec-label" style="color:var(--text);font-size:13px;font-weight:600;">🎙️ ${c.label}</div>
+        </button>`).join('');
+      showModal(`
+        <div class="event-modal-header">
+          <span class="event-modal-emoji">🎤</span>
+          <div style="font-size:9px;font-family:'DM Mono',monospace;letter-spacing:2px;color:var(--accent2);margin-bottom:6px;">📰 PRESS CONFERENCE</div>
+          <div class="event-modal-title">${ev.title}</div>
+          <div class="event-modal-subtitle">${ev.subtitle}</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:10px;padding:12px;margin-bottom:14px;">
+          <div style="font-size:12px;color:var(--text-dim);line-height:1.75;font-style:italic;">"${bodyText}"</div>
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:14px;">
+          <div style="flex:1;background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;letter-spacing:1px;">MORALE</div>
+            <div style="font-size:18px;font-weight:700;color:${moraleColor};">${moraleVal}</div>
+          </div>
+          <div style="flex:1;background:var(--surface2);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;letter-spacing:1px;">BRAND</div>
+            <div style="font-size:18px;font-weight:700;color:var(--gold);">${brandVal}</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">Choose your response carefully — outcomes are unpredictable:</div>
+        <div class="event-choices">${choicesHTML}</div>`,true);
+      return;
+    }
+
     const rarityBadge={rare:'🔶 Rare Event',very_rare:'💎 Very Rare Event',legendary:'☠️ LEGENDARY EVENT',uncommon:'⬦ Uncommon Event',common:''}[ev.rarity]||'';
     const choicesHTML=ev.choices.map(c=>{
       const isDanger=c.label.includes('👊')||c.label.includes('😡')||c.label.includes('💀');
       const isGold=c.label.includes('💰')||c.label.includes('✍️')||c.label.includes('✈️')||c.label.includes('🌍')||c.label.includes('🤝');
       return`<button class="event-choice ${isDanger?'danger':isGold?'gold':''}" onclick="App.resolveBlockingEvent('${c.fn}')">
-        <div class="ec-label" style="color:var(--text);font-size:13px;font-weight:600;margin-bottom:4px;">${c.label}</div>
-        <div class="ec-outcome" style="color:var(--text-dim);font-size:11px;">${c.outcome}</div>
+        <div class="ec-label" style="color:var(--text);font-size:13px;font-weight:600;">${c.label}</div>
       </button>`;
     }).join('');
     showModal(`
@@ -423,7 +772,28 @@ const UI = {
       </div>`,true);
   },
 
-  // ── Bet Modal ─────────────────────────────────────────────
+  // ── Cup Win Celebration ───────────────────────────────────────
+  showCupCelebration(cupDef){
+    const confetti=['🎊','🎉','🏆','⭐','🥇','✨','🎆','🎇'];
+    const rand=arr=>arr[Math.floor(Math.random()*arr.length)];
+    showModal(`
+      <div style="text-align:center;padding:8px 0 24px;">
+        <div style="font-size:64px;animation:bounceIn .6s cubic-bezier(.22,1,.36,1) both;margin-bottom:12px;">${cupDef.icon}</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:3px;color:var(--gold);margin-bottom:6px;text-shadow:0 0 30px rgba(245,200,66,.5);">
+          CHAMPIONS!
+        </div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:6px;color:var(--text);">${cupDef.name}</div>
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">You've lifted the trophy. This moment is forever.</div>
+        <div style="font-size:40px;letter-spacing:6px;margin-bottom:24px;">${Array.from({length:7},()=>rand(confetti)).join('')}</div>
+        <div style="background:linear-gradient(135deg,rgba(245,200,66,.1),rgba(0,229,160,.08));border:1px solid rgba(245,200,66,.3);border-radius:12px;padding:16px;margin-bottom:20px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:2px;color:var(--gold);margin-bottom:8px;">SEASON HONOURS</div>
+          <div style="font-size:13px;color:var(--text-dim);">🏆 Trophies this career: <strong style="color:var(--gold);">${G.careerStats.trophies}</strong></div>
+        </div>
+        <button class="btn btn-gold" style="width:100%;padding:14px;font-size:15px;" onclick="closeModal();App.renderDashboard();">
+          🎊 Celebrate with the Squad
+        </button>
+      </div>`,true);
+  },
   showBetModal(){
     const opp=G.league.teams.find(t=>!t.isPlayer)||{name:'Opponents'};
     showModal(`
@@ -444,56 +814,80 @@ const UI = {
   selectBet(o){UI._betSel=o;['win','draw','lose'].forEach(x=>document.getElementById(`bopt-${x}`)?.classList.toggle('selected',x===o));},
   quickBet(a){UI._betAmt=Math.min(a,G.wallet);const inp=document.getElementById('betAmountInput');if(inp)inp.value=UI._betAmt;},
   confirmBet(){resolveBet(UI._betSel||'win',UI._betAmt||0);},
+  _casinoAutosave(){
+    try{
+      const s={...G,achievements:[...G.achievements],triggeredEvents:[...G.triggeredEvents]};
+      localStorage.setItem('propath3_save',JSON.stringify(s));
+      showToast('💾 Casino autosaved','');
+    }catch(e){}
+  },
 
   // ── Casino Tab ────────────────────────────────────────────
   renderCasinoTab(){
     const el=document.getElementById('casinoContent');if(!el)return;
     el.innerHTML=`
-      <div style="text-align:center;padding:0 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px;">
-        <div style="font-size:36px;margin-bottom:8px;">🎰</div>
-        <div style="font-size:18px;font-weight:700;letter-spacing:.5px;margin-bottom:4px;">The ProPath Casino</div>
-        <div style="font-size:12px;color:var(--text-dim);">For entertainment only · Gamble responsibly</div>
-        <div style="margin-top:8px;font-size:15px;color:var(--gold);font-weight:700;">${UI.fmtMoney(G.wallet)} available</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-        ${[
-          {icon:'🪙',name:'Coin Flip',desc:'Call it — 1.9×',fn:'UI.playCoinFlip()'},
-          {icon:'🎲',name:'Dice Roll',desc:'High/Low — 1.8×',fn:'UI.playDice()'},
-          {icon:'🎰',name:'Slots',desc:'Match 3 — up to 10×',fn:'UI.playSlots()'},
-          {icon:'🃏',name:'Blackjack',desc:'Beat 21 — 2×',fn:'UI.playBlackjack()'},
-          {icon:'🎡',name:'Roulette',desc:'Red/Black/Number',fn:'UI.playRoulette()'},
-          {icon:'🎫',name:'Scratchcard',desc:'£500 — instant win',fn:'UI.playScratchcard()'},
-        ].map(g=>`<button class="casino-game-btn" onclick="${g.fn}">
-          <div style="font-size:28px;margin-bottom:6px;">${g.icon}</div>
-          <div style="font-weight:700;font-size:12px;margin-bottom:3px;">${g.name}</div>
-          <div style="font-size:10px;color:var(--text-dim);">${g.desc}</div>
-        </button>`).join('')}
-      </div>
-      <p style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:14px;">⚠️ No real money. If gambling affects you in real life, please seek support.</p>`;
+      <div class="card">
+        <div style="text-align:center;padding:0 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px;">
+          <div style="font-size:36px;margin-bottom:8px;">🎰</div>
+          <div style="font-size:18px;font-weight:700;letter-spacing:.5px;margin-bottom:4px;">The ProPath Casino</div>
+          <div style="font-size:12px;color:var(--text-dim);">For entertainment only · Gamble responsibly</div>
+          <div style="margin-top:8px;font-size:15px;color:var(--gold);font-weight:700;">${UI.fmtMoney(G.wallet)} available</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          ${[
+            {icon:'🪙',name:'Coin Flip',desc:'Call it — 1.9×',fn:'UI.playCoinFlip()'},
+            {icon:'🎲',name:'Dice Roll',desc:'High/Low — 1.8×',fn:'UI.playDice()'},
+            {icon:'🎰',name:'Slots',desc:'Match 3 — up to 10×',fn:'UI.playSlots()'},
+            {icon:'🃏',name:'Blackjack',desc:'Beat 21 — 2×',fn:'UI.playBlackjack()'},
+            {icon:'🎡',name:'Roulette',desc:'Red/Black/Number',fn:'UI.playRoulette()'},
+            {icon:'🎫',name:'Scratchcard',desc:'£500 — instant win',fn:'UI.playScratchcard()'},
+          ].map(g=>`<button class="casino-game-btn" onclick="${g.fn}">
+            <div style="font-size:28px;margin-bottom:6px;">${g.icon}</div>
+            <div style="font-weight:700;font-size:12px;margin-bottom:3px;">${g.name}</div>
+            <div style="font-size:10px;color:var(--text-dim);">${g.desc}</div>
+          </button>`).join('')}
+        </div>
+        <p style="font-size:10px;color:var(--text-muted);text-align:center;margin-top:14px;">⚠️ No real money. If gambling affects you in real life, please seek support.</p>
+      </div>`;
   },
 
-  _askStake(game,cb){
+  // Store the pending game so stake modals can reference it without serializing callbacks
+  _pendingGame:null,
+
+  _askStake(gameKey,gameTitle){
+    UI._pendingGame=gameKey;
     const stakes=[500,1000,2000,5000,10000,25000,50000].filter(s=>s<=G.wallet);
-    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">💷</span><div class="event-modal-title">${game}</div><div class="event-modal-subtitle">Balance: ${UI.fmtMoney(G.wallet)}</div></div>
+    if(!stakes.length&&G.wallet>=100)stakes.push(G.wallet);
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">💷</span><div class="event-modal-title">${gameTitle}</div><div class="event-modal-subtitle">Balance: ${UI.fmtMoney(G.wallet)}</div></div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0;">
-      ${stakes.map(s=>`<button class="btn btn-primary" style="font-size:12px;padding:10px;" onclick="(${cb.toString()})(${s})">${UI.fmtMoney(s)}</button>`).join('')}
-      ${G.wallet>=100?`<button class="btn btn-danger" style="font-size:11px;padding:10px;grid-column:span 3;" onclick="(${cb.toString()})(${G.wallet})">🔥 ALL IN — ${UI.fmtMoney(G.wallet)}</button>`:''}
+      ${stakes.map(s=>`<button class="btn btn-primary" style="font-size:12px;padding:10px;" onclick="UI._launchGame(${s})">${UI.fmtMoney(s)}</button>`).join('')}
+      ${G.wallet>0?`<button class="btn btn-danger" style="font-size:11px;padding:10px;grid-column:span 3;" onclick="UI._launchGame(${G.wallet})">🔥 ALL IN — ${UI.fmtMoney(G.wallet)}</button>`:''}
     </div>
     <button class="btn btn-ghost" style="width:100%;" onclick="closeModal();UI.renderCasinoTab()">← Back</button>`);
   },
 
-  playCoinFlip(){
-    UI._askStake('🪙 Coin Flip',function(stake){
-      showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🪙</span><div class="event-modal-title">Coin Flip — ${UI.fmtMoney(stake)}</div><div class="event-modal-subtitle">Call it in the air...</div></div>
-      <div style="display:flex;gap:12px;margin:20px 0;">
-        <button class="btn btn-primary" style="flex:1;padding:18px;font-size:18px;" onclick="UI._coinResult(${stake},'heads')">🪙 Heads</button>
-        <button class="btn btn-gold" style="flex:1;padding:18px;font-size:18px;" onclick="UI._coinResult(${stake},'tails')">🌕 Tails</button>
-      </div><button class="btn btn-ghost" style="width:100%;" onclick="closeModal();UI.renderCasinoTab()">← Back</button>`);
-    });
+  _launchGame(stake){
+    const g=UI._pendingGame;
+    if(g==='coinflip')UI._showCoinFlip(stake);
+    else if(g==='dice')UI._showDice(stake);
+    else if(g==='slots')UI._spinSlots(stake);
+    else if(g==='roulette')UI._showRoulette(stake);
+    else if(g==='blackjack')UI._bjStart(stake);
+    else if(g==='scratchcard')UI._doScratchcard(stake);
+  },
+
+  playCoinFlip(){UI._askStake('coinflip','🪙 Coin Flip');},
+  _showCoinFlip(stake){
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🪙</span><div class="event-modal-title">Coin Flip — ${UI.fmtMoney(stake)}</div><div class="event-modal-subtitle">Call it in the air...</div></div>
+    <div style="display:flex;gap:12px;margin:20px 0;">
+      <button class="btn btn-primary" style="flex:1;padding:18px;font-size:18px;" onclick="UI._coinResult(${stake},'heads')">🪙 Heads</button>
+      <button class="btn btn-gold" style="flex:1;padding:18px;font-size:18px;" onclick="UI._coinResult(${stake},'tails')">🌕 Tails</button>
+    </div><button class="btn btn-ghost" style="width:100%;" onclick="closeModal();UI.renderCasinoTab()">← Back</button>`);
   },
   _coinResult(stake,call){
     const r=Math.random()<0.5?'heads':'tails',won=r===call;
     if(won)G.wallet+=Math.floor(stake*0.9);else G.wallet-=stake;
+    UI._casinoAutosave();
     addLog(won?'🪙':'💸',won?`Coin Flip WIN +${UI.fmtMoney(Math.floor(stake*.9))}`:`Coin Flip loss -${UI.fmtMoney(stake)}`,'',G.season.dayOfSeason);
     showModal(`<div class="event-modal-header"><span class="event-modal-emoji">${won?'🎉':'😬'}</span><div class="event-modal-title">${r.toUpperCase()}! ${won?'WIN':'LOSS'}</div><div class="event-modal-subtitle">${won?`+${UI.fmtMoney(Math.floor(stake*.9))}`:`-${UI.fmtMoney(stake)}`}</div></div>
     <div style="text-align:center;font-size:80px;padding:16px;">${r==='heads'?'🪙':'🌕'}</div>
@@ -501,19 +895,19 @@ const UI = {
     App.renderDashboard();
   },
 
-  playDice(){
-    UI._askStake('🎲 Dice Roll',function(stake){
-      showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🎲</span><div class="event-modal-title">Dice — ${UI.fmtMoney(stake)}</div><div class="event-modal-subtitle">High (4-6) or Low (1-3)?</div></div>
-      <div style="display:flex;gap:12px;margin:20px 0;">
-        <button class="btn btn-primary" style="flex:1;padding:16px;" onclick="UI._diceResult(${stake},'high')">🔺 High (4-6)</button>
-        <button class="btn btn-gold" style="flex:1;padding:16px;" onclick="UI._diceResult(${stake},'low')">🔻 Low (1-3)</button>
-      </div><button class="btn btn-ghost" style="width:100%;" onclick="closeModal();UI.renderCasinoTab()">← Back</button>`);
-    });
+  playDice(){UI._askStake('dice','🎲 Dice Roll');},
+  _showDice(stake){
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🎲</span><div class="event-modal-title">Dice — ${UI.fmtMoney(stake)}</div><div class="event-modal-subtitle">High (4-6) or Low (1-3)?</div></div>
+    <div style="display:flex;gap:12px;margin:20px 0;">
+      <button class="btn btn-primary" style="flex:1;padding:16px;" onclick="UI._diceResult(${stake},'high')">🔺 High (4-6)</button>
+      <button class="btn btn-gold" style="flex:1;padding:16px;" onclick="UI._diceResult(${stake},'low')">🔻 Low (1-3)</button>
+    </div><button class="btn btn-ghost" style="width:100%;" onclick="closeModal();UI.renderCasinoTab()">← Back</button>`);
   },
   _diceResult(stake,call){
     const roll=Math.floor(Math.random()*6)+1,won=(call==='high'&&roll>=4)||(call==='low'&&roll<=3);
     const faces=['','⚀','⚁','⚂','⚃','⚄','⚅'];
     if(won)G.wallet+=Math.floor(stake*0.8);else G.wallet-=stake;
+    UI._casinoAutosave();
     addLog(won?'🎲':'💸',won?`Dice WIN +${UI.fmtMoney(Math.floor(stake*.8))}`:`Dice loss -${UI.fmtMoney(stake)}`,'',G.season.dayOfSeason);
     showModal(`<div class="event-modal-header"><span class="event-modal-emoji">${won?'🎉':'😬'}</span><div class="event-modal-title">Rolled ${roll}! ${won?'WIN':'LOSS'}</div><div class="event-modal-subtitle">${won?`+${UI.fmtMoney(Math.floor(stake*.8))}`:`-${UI.fmtMoney(stake)}`}</div></div>
     <div style="text-align:center;font-size:80px;padding:16px;">${faces[roll]}</div>
@@ -521,9 +915,7 @@ const UI = {
     App.renderDashboard();
   },
 
-  playSlots(){
-    UI._askStake('🎰 Slots',function(stake){UI._spinSlots(stake);});
-  },
+  playSlots(){UI._askStake('slots','🎰 Slots');},
   _spinSlots(stake){
     const sym=['⚽','🏆','⭐','💰','👑','🎯','🔥','💎'];
     const [a,b,c]=[E.pick(sym),E.pick(sym),E.pick(sym)];
@@ -532,6 +924,7 @@ const UI = {
     else if(a===b||b===c||a===c){mult=1.4;label='Pair — 1.4×';}
     const payout=Math.floor(stake*mult);const net=payout-stake;
     if(net>0)G.wallet+=net;else G.wallet-=stake;
+    UI._casinoAutosave();
     addLog(net>0?'🎰':'💸',net>0?`Slots: ${label} +${UI.fmtMoney(net)}`:`Slots loss -${UI.fmtMoney(stake)}`,'',G.season.dayOfSeason);
     showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🎰</span><div class="event-modal-title">${label}</div><div class="event-modal-subtitle">${net>0?`+${UI.fmtMoney(net)}`:`-${UI.fmtMoney(stake)}`}</div></div>
     <div style="display:flex;justify-content:center;gap:12px;padding:20px;background:var(--surface2);border-radius:12px;margin:12px 0;font-size:52px;">${a}${b}${c}</div>
@@ -539,21 +932,21 @@ const UI = {
     App.renderDashboard();
   },
 
-  playRoulette(){
-    UI._askStake('🎡 Roulette',function(stake){
-      showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🎡</span><div class="event-modal-title">Roulette — ${UI.fmtMoney(stake)}</div><div class="event-modal-subtitle">Place your chips</div></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0;">
-        <button class="btn" style="padding:14px;background:rgba(255,71,87,.15);border-color:var(--red);color:var(--text);" onclick="UI._rouletteColor(${stake},'red',1.9)">🔴 Red (1.9×)</button>
-        <button class="btn btn-ghost" style="padding:14px;" onclick="UI._rouletteColor(${stake},'black',1.9)">⚫ Black (1.9×)</button>
-        <button class="btn btn-gold" style="padding:14px;" onclick="UI._rouletteColor(${stake},'green',14)">🟢 Green (14×)</button>
-        <button class="btn btn-primary" style="padding:14px;" onclick="UI._rouletteNumber(${stake})">🔢 Pick Number (35×)</button>
-      </div><button class="btn btn-ghost" style="width:100%;" onclick="closeModal();UI.renderCasinoTab()">← Back</button>`);
-    });
+  playRoulette(){UI._askStake('roulette','🎡 Roulette');},
+  _showRoulette(stake){
+    showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🎡</span><div class="event-modal-title">Roulette — ${UI.fmtMoney(stake)}</div><div class="event-modal-subtitle">Place your chips</div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0;">
+      <button class="btn" style="padding:14px;background:rgba(255,71,87,.15);border-color:var(--red);color:var(--text);" onclick="UI._rouletteColor(${stake},'red',1.9)">🔴 Red (1.9×)</button>
+      <button class="btn btn-ghost" style="padding:14px;" onclick="UI._rouletteColor(${stake},'black',1.9)">⚫ Black (1.9×)</button>
+      <button class="btn btn-gold" style="padding:14px;" onclick="UI._rouletteColor(${stake},'green',14)">🟢 Green (14×)</button>
+      <button class="btn btn-primary" style="padding:14px;" onclick="UI._rouletteNumber(${stake})">🔢 Pick Number (35×)</button>
+    </div><button class="btn btn-ghost" style="width:100%;" onclick="closeModal();UI.renderCasinoTab()">← Back</button>`);
   },
   _rouletteColor(stake,bet,mult){
     const num=Math.floor(Math.random()*37),color=num===0?'green':num%2===0?'black':'red';
     const won=color===bet,payout=won?Math.floor(stake*mult):0;
     if(won)G.wallet+=payout-stake;else G.wallet-=stake;
+    UI._casinoAutosave();
     const emoji={red:'🔴',black:'⚫',green:'🟢'}[color];
     addLog(won?'🎡':'💸',won?`Roulette WIN +${UI.fmtMoney(payout-stake)}`:`Roulette loss -${UI.fmtMoney(stake)}`,'',G.season.dayOfSeason);
     showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🎡</span><div class="event-modal-title">${emoji} ${num} — ${color.toUpperCase()}</div><div class="event-modal-subtitle">${won?`+${UI.fmtMoney(payout-stake)}`:`-${UI.fmtMoney(stake)}`}</div></div>
@@ -569,6 +962,7 @@ const UI = {
   _rouletteNumResult(stake,pick){
     const num=Math.floor(Math.random()*37),won=num===pick;
     if(won)G.wallet+=Math.floor(stake*35)-stake;else G.wallet-=stake;
+    UI._casinoAutosave();
     addLog(won?'🎡':'💸',won?`ROULETTE JACKPOT! +${UI.fmtMoney(Math.floor(stake*35)-stake)}`:`Roulette loss -${UI.fmtMoney(stake)}`,'',G.season.dayOfSeason);
     showModal(`<div class="event-modal-header"><span class="event-modal-emoji">${won?'🎉':'🎡'}</span><div class="event-modal-title">Ball: ${num}${won?' — YOUR NUMBER!':''}</div><div class="event-modal-subtitle">${won?`35× WIN! +${UI.fmtMoney(Math.floor(stake*35)-stake)}`:`You picked ${pick}. -${UI.fmtMoney(stake)}`}</div></div>
     <div style="text-align:center;font-size:72px;padding:16px;">${won?'🎉':'💫'}</div>
@@ -576,7 +970,7 @@ const UI = {
     App.renderDashboard();
   },
 
-  playBlackjack(){UI._askStake('🃏 Blackjack',function(stake){UI._bjStart(stake);});},
+  playBlackjack(){UI._askStake('blackjack','🃏 Blackjack');},
   _cardVal(c){return Math.min(10,[1,2,3,4,5,6,7,8,9,10,10,10,10][c%13]);},
   _cardStr(c){return[' A','2','3','4','5','6','7','8','9','10',' J',' Q',' K'][c%13];},
   _handVal(h){let s=h.reduce((a,c)=>a+UI._cardVal(c),0);if(s<=11&&h.some(c=>c%13===0))s+=10;return s;},
@@ -618,16 +1012,18 @@ const UI = {
     else{msg=`Dealer wins (${dv} vs ${pv}). -${UI.fmtMoney(stake)}`;}
     const mult=reason==='bj'&&player.length===2?1.5:1;
     if(won)G.wallet+=Math.floor(stake*mult);else if(!push)G.wallet-=stake;
+    UI._casinoAutosave();
     addLog(won?'🃏':'💸',won?`Blackjack WIN +${UI.fmtMoney(Math.floor(stake*mult))}`:`Blackjack loss -${UI.fmtMoney(stake)}`,'',G.season.dayOfSeason);
     UI._bjRender(true,msg);App.renderDashboard();
   },
 
-  playScratchcard(){
-    const cost=500;
-    if(G.wallet<cost){showToast('Need £500!','err');return;}
-    G.wallet-=cost;
+  playScratchcard(){UI._doScratchcard(500);},
+  _doScratchcard(stake){
+    if(G.wallet<stake){showToast(`Need ${UI.fmtMoney(stake)}!`,'err');return;}
+    G.wallet-=stake;
     const prizePool=[0,0,0,0,0,500,500,1000,2500,5000];
     const prize=E.pick(prizePool);if(prize>0)G.wallet+=prize;
+    UI._casinoAutosave();
     const cells=Array.from({length:6},(_,i)=>i===0?prize:E.pick(prizePool));
     addLog(prize>0?'🎫':'💸',prize>0?`Scratchcard WIN +${UI.fmtMoney(prize)}`:`Scratchcard — no prize -£500`,'',G.season.dayOfSeason);
     showModal(`<div class="event-modal-header"><span class="event-modal-emoji">🎫</span><div class="event-modal-title">${prize>0?'🎉 WINNER!':'No prize'}</div><div class="event-modal-subtitle">${prize>0?`+${UI.fmtMoney(prize)}`:'Better luck next time!'}</div></div>
@@ -636,6 +1032,138 @@ const UI = {
     </div>
     <div style="display:flex;gap:10px;"><button class="btn btn-primary" style="flex:1;" onclick="UI.playScratchcard()">Another (£500)</button><button class="btn btn-ghost" style="flex:1;" onclick="closeModal();UI.renderCasinoTab()">Back</button></div>`);
     App.renderDashboard();
+  },
+
+
+  // ── Calendar Tab (FIFA/FC-style monthly grid) ──────────────
+  _calDisplayMonth: null, // {year, month} relative to season start
+
+  _getCalMonthData(relMonth){
+    // Season starts in July (month index 0 = July)
+    // relMonth: 0=July, 1=Aug, 2=Sep... 11=June
+    const MONTH_NAMES=['July','August','September','October','November','December','January','February','March','April','May','June'];
+    const MONTH_DAYS=[31,31,30,31,30,31,31,28,31,30,31,30];
+    // Day-of-season offsets for start of each month
+    const monthStarts=[0,31,62,92,123,153,184,215,243,274,304,335];
+    const monthStart=monthStarts[relMonth]||0;
+    const monthEnd=monthStart+(MONTH_DAYS[relMonth]||30);
+    return{name:MONTH_NAMES[relMonth],monthStart,monthEnd,days:MONTH_DAYS[relMonth]||30};
+  },
+
+  _currentRelMonth(){
+    const day=G.season.dayOfSeason;
+    const monthStarts=[0,31,62,92,123,153,184,215,243,274,304,335];
+    for(let i=monthStarts.length-1;i>=0;i--){if(day>=monthStarts[i])return i;}
+    return 0;
+  },
+
+  renderCalendarTab(){
+    if(UI._calDisplayMonth===null) UI._calDisplayMonth=UI._currentRelMonth();
+    const m=UI._calDisplayMonth;
+    const {name,monthStart,monthEnd,days}=UI._getCalMonthData(m);
+    const day=G.season.dayOfSeason;
+    // Gather all events in this month
+    const leagueDays=new Set((G.league.matchdays||[]).filter(d=>d>=monthStart&&d<monthEnd).map(d=>d-monthStart+1));
+    const playedLeague=new Set([...G.matchHistory].filter(mh=>!mh.isCup).map(mh=>{
+      // approx: find matchdays that have been consumed (no longer in G.league.matchdays)
+      return null; // we use match history date strings instead
+    }));
+    // Cup days
+    const cupDays={}; // dayInMonth -> [{icon, name, stage}]
+    Object.entries(G.cups||{}).forEach(([id,cup])=>{
+      const cd=CUPS.find(c=>c.id===id);if(!cd)return;
+      (cup.matchDays||[]).forEach((d,i)=>{
+        if(d>=monthStart&&d<monthEnd){
+          const dm=d-monthStart+1;
+          if(!cupDays[dm])cupDays[dm]=[];
+          cupDays[dm].push({icon:cd.icon,name:cd.name,round:cd.rounds?.[i]||'Round',eliminated:cup.eliminated,winner:cup.winner,stage:cup.stage,roundIdx:i});
+        }
+      });
+    });
+    // Past match results from matchHistory keyed by date label
+    const pastResults={};
+    G.matchHistory.forEach(mh=>{
+      pastResults[mh.date]=mh;
+    });
+    // Build day-of-week header (July starts on a Monday typically; use day offset)
+    // Jul 1 of any year — just use a fixed offset per month for display
+    const DOW_OFFSETS={0:1,1:4,2:0,3:2,4:5,5:1,6:3,7:6,8:2,9:4,10:0,11:3}; // approximate
+    const startDow=DOW_OFFSETS[m]||0; // 0=Mon
+    const el=document.getElementById('calendarGrid');if(!el)return;
+    const monthTitle=document.getElementById('calMonthTitle');if(monthTitle)monthTitle.textContent=name;
+    // Day of week headers
+    const dowHeaders='<div class="cal-header">Mon</div><div class="cal-header">Tue</div><div class="cal-header">Wed</div><div class="cal-header">Thu</div><div class="cal-header">Fri</div><div class="cal-header">Sat</div><div class="cal-header">Sun</div>';
+    let cells='';
+    // Blank cells before month start
+    for(let i=0;i<startDow;i++) cells+=`<div class="cal-cell empty"></div>`;
+    for(let d=1;d<=days;d++){
+      const absDay=monthStart+d-1;
+      const dateLabel=E.getDayLabel(absDay);
+      const isToday=absDay===day;
+      const isPast=absDay<day;
+      const hasLeague=leagueDays.has(d);
+      const hasCup=!!cupDays[d];
+      const pastMatch=pastResults[dateLabel];
+      const resultColor=pastMatch?(pastMatch.result==='W'?'#00e5a0':pastMatch.result==='D'?'#f5c842':'#ff4757'):null;
+      const cupInfo=cupDays[d]?.[0];
+      let cellClass=`cal-cell${isToday?' today':''}${isPast&&!pastMatch?' past':''}`;
+      let innerContent=`<div class="cal-day-num">${d}</div>`;
+      if(pastMatch){
+        const compIcon=pastMatch.isCup?'🏆':'⚽';
+        innerContent+=`<div class="cal-fixture" style="background:${resultColor}22;border-left:2px solid ${resultColor};">
+          <span style="font-size:8px;">${compIcon}</span>
+          <span class="cal-result" style="color:${resultColor};font-weight:700;">${pastMatch.result} ${pastMatch.hg}-${pastMatch.ag}</span>
+          ${pastMatch.myGoals?`<span style="font-size:8px;color:#00e5a0;">⚽${pastMatch.myGoals}</span>`:''}
+          ${pastMatch.motm?`<span style="font-size:8px;color:var(--gold);">⭐</span>`:''}
+        </div>`;
+      } else if(hasLeague&&!isPast){
+        innerContent+=`<div class="cal-fixture upcoming">
+          <span style="font-size:8px;">⚽</span>
+          <span style="font-size:9px;font-weight:600;">League</span>
+        </div>`;
+      }
+      if(hasCup&&cupInfo){
+        if(isPast){
+          const pastCup=pastResults[dateLabel];
+          if(pastCup&&pastCup.isCup){} // already shown above
+          else{
+            const cupColor=cupInfo.eliminated?'#ff4757':cupInfo.winner?'#f5c842':'#4a9eff';
+            innerContent+=`<div class="cal-fixture" style="background:${cupColor}18;border-left:2px solid ${cupColor};">
+              <span style="font-size:8px;">${cupInfo.icon}</span>
+              <span style="font-size:8px;color:${cupColor};">${cupInfo.round}</span>
+            </div>`;
+          }
+        } else {
+          innerContent+=`<div class="cal-fixture upcoming" style="border-left:2px solid #4a9eff;">
+            <span style="font-size:8px;">${cupInfo.icon}</span>
+            <span style="font-size:9px;font-weight:600;">${cupInfo.round}</span>
+          </div>`;
+        }
+      }
+      if(isToday) innerContent+=`<div style="width:6px;height:6px;background:var(--accent);border-radius:50%;margin:2px auto 0;"></div>`;
+      cells+=`<div class="${cellClass}">${innerContent}</div>`;
+    }
+    el.innerHTML=`<div class="cal-grid">${dowHeaders}${cells}</div>`;
+    // Legend
+    const legEl=document.getElementById('calLegend');
+    if(legEl) legEl.innerHTML=`
+      <span>🟢 <span style="width:12px;height:12px;background:#00e5a022;border-left:2px solid #00e5a0;display:inline-block;"></span> Win</span>
+      <span>🟡 <span style="width:12px;height:12px;background:#f5c84222;border-left:2px solid #f5c842;display:inline-block;"></span> Draw</span>
+      <span>🔴 <span style="width:12px;height:12px;background:#ff475722;border-left:2px solid #ff4757;display:inline-block;"></span> Loss</span>
+      <span>⚽ League · 🏆 Cup</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:6px;height:6px;background:var(--accent);border-radius:50%;"></span> Today</span>`;
+  },
+
+  calPrevMonth(){
+    if(UI._calDisplayMonth===null) UI._calDisplayMonth=UI._currentRelMonth();
+    UI._calDisplayMonth=Math.max(0, UI._calDisplayMonth-1);
+    UI.renderCalendarTab();
+  },
+
+  calNextMonth(){
+    if(UI._calDisplayMonth===null) UI._calDisplayMonth=UI._currentRelMonth();
+    UI._calDisplayMonth=Math.min(11, UI._calDisplayMonth+1);
+    UI.renderCalendarTab();
   },
 
   // ── HOF ───────────────────────────────────────────────────
@@ -651,7 +1179,11 @@ const UI = {
           <div class="hof-name">${p.name}</div>
           <button onclick="UI.confirmDeleteHOF('${p.id}')" title="Remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:15px;padding:0;line-height:1;opacity:.6;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.6">🗑</button>
         </div>
-        <div class="hof-meta">${p.flag||''} ${p.nation} · ${p.position} · ${p.seasons} season${p.seasons!==1?'s':''} · Class of ${p.date}</div>
+        <div class="hof-meta">${p.flag||''} ${p.nation} · ${p.position} · ${p.seasons} season${p.seasons!==1?'s':''}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">
+          ⚽ Retired: ${p.retiredInGame?`${p.retiredInGame}, ${p.retiredInGameYear}`:(p.date?`Season ${p.date}`:'')}
+          &nbsp;·&nbsp; 📅 ${p.retiredIRL||'Unknown date'}
+        </div>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">Peak: ${p.bestOVR} OVR · ${p.highestLeague}${p.intlCaps?` · 🌍 ${p.intlCaps} caps`:''}</div>
         <div class="hof-stats">
           <div class="hof-stat"><div class="hof-stat-v" style="color:var(--accent)">${p.goals}</div><div class="hof-stat-l">Goals</div></div>
